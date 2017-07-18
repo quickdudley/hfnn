@@ -2,17 +2,28 @@
 module AI.HFNN.Internal (
   NetworkBuilder,
   WeightSelector,
-  NetworkStructure
+  NetworkStructure,
+  NodeRange,
+  WeightRange,
+  getInputNodes,
+  getOutputNodes,
+  bias,
+  newHiddenNodes,
+  newWeights
  ) where
 
 import Foreign.ForeignPtr
 import Foreign.Storable
 import System.IO.Unsafe
 
+-- | Represents the relationship between a linear array of doubles and a
+-- particular weight matrix
 data WeightSelector = WeightSelector (forall m . Monad m =>
   Int -> Int -> Double -> m Double
  ) Int Int
 
+-- | Describes the overall structure of a neural network, but not any of its
+-- weights.
 data NetworkStructure = NetworkStructure {
   structureInputs :: Int,
   structureOutputs :: Int,
@@ -24,6 +35,7 @@ data NetworkStructure = NetworkStructure {
     (WeightSelector -> Int -> Int -> Double -> m ()) -> m ()
  }
 
+-- | Monad used for composing neural networks
 newtype NetworkBuilder a = NetworkBuilder (
   NetworkStructure -> (NetworkStructure,a)
  )
@@ -47,25 +59,43 @@ instance Monad NetworkBuilder where
     in b s1
    )
 
+-- | A contiguous set of nodes
 data NodeRange = NodeRange Int Int
+-- | A set of weight indices
 data WeightRange = WeightRange Int Int
 
+-- | Gets the set of nodes used for input to the network
+getInputNodes :: NetworkBuilder NodeRange
 getInputNodes = NetworkBuilder (\s -> let
   n = structureInputs s
   in (s,NodeRange 1 n)
  )
 
+-- | Gets the set of nodes used for output from the network
+getOutputNodes :: NetworkBuilder NodeRange
 getOutputNodes = NetworkBuilder (\s -> let
   i = structureInputs s
   o = structureOutputs s
   in (s,NodeRange (i + 1) (i + o))
  )
 
+-- | The bias node
+bias :: NodeRange
 bias = NodeRange 0 0
 
+-- | Returns a new layer of hidden nodes
+newHiddenNodes :: Int -> NetworkBuilder NodeRange
 newHiddenNodes n = NetworkBuilder (\s -> let
   x = structureTotalNodes s
   x' = x + n
   s' = s {structureTotalNodes = x'}
   in (s', NodeRange (x + 1) x')
+ )
+
+newWeights :: Int -> Int -> NetworkBuilder WeightRange
+newWeights i o = NetworkBuilder (\s -> let
+  w = structureWeights s
+  w' = i * o + w
+  s' = s {structureWeights = w'}
+  in (s', WeightRange (w + 1) w')
  )
