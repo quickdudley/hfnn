@@ -4,8 +4,7 @@ module AI.HFNN.Internal (
   WeightSelector,
   NetworkStructure,
   NodeRange,
-  WeightRange,
-  getInputNodes,
+ getInputNodes,
   getOutputNodes,
   bias,
   newHiddenNodes,
@@ -19,6 +18,7 @@ import System.IO.Unsafe
 -- | Represents the relationship between a linear array of doubles and a
 -- particular weight matrix
 data WeightSelector = WeightSelector (forall m . Monad m =>
+  (Int -> Double -> m Double) ->
   Int -> Int -> Double -> m Double
  ) Int Int
 
@@ -61,8 +61,6 @@ instance Monad NetworkBuilder where
 
 -- | A contiguous set of nodes
 data NodeRange = NodeRange Int Int
--- | A set of weight indices
-data WeightRange = WeightRange Int Int
 
 -- | Gets the set of nodes used for input to the network
 getInputNodes :: NetworkBuilder NodeRange
@@ -92,10 +90,11 @@ newHiddenNodes n = NetworkBuilder (\s -> let
   in (s', NodeRange (x + 1) x')
  )
 
-newWeights :: Int -> Int -> NetworkBuilder WeightRange
+-- | Returns a new set of network weights not attached to any nodes
+newWeights :: Int -> Int -> NetworkBuilder WeightSelector
 newWeights i o = NetworkBuilder (\s -> let
   w = structureWeights s
   w' = i * o + w
   s' = s {structureWeights = w'}
-  in (s', WeightRange (w + 1) w')
+  in (s', WeightSelector (\l x y v -> l (w + y + o * x) v) i o)
  )
