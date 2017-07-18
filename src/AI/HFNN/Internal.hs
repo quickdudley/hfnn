@@ -98,3 +98,26 @@ newWeights i o = NetworkBuilder (\s -> let
   s' = s {structureWeights = w'}
   in (s', WeightSelector (\l x y v -> l (w + y + o * x) v) i o)
  )
+
+-- | Get the number of nodes
+nodeCount :: NodeRange -> Int
+nodeCount (NodeRange f t) = t - f + 1
+
+-- | Split a range into 2 parts. The 'Int' argument is the size of the left hand
+-- return value. Will return 'Nothing' if the split is impossible.
+splitLayer :: NodeRange -> Int -> Maybe (NodeRange,NodeRange)
+splitLayer r@(NodeRange f t) n = let
+  w = nodeCount r
+  m = f + n
+  in case () of
+   _ | n <= 0 -> Nothing
+     | n >= w -> Nothing
+     | otherwise -> Just (NodeRange f (m - 1), NodeRange m t)
+
+-- | Split a range into a list of equally sized parts (the final one may be
+-- smaller)
+divideLayer :: NodeRange -> Int -> [NodeRange]
+divideLayer a n = go a where
+  go r = case splitLayer r n of
+    Just (f,t) -> f : go t
+    Nothing -> [r]
