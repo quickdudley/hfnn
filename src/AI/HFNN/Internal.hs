@@ -61,3 +61,7 @@ instance Monad CatTree where
   (Run l a) >>= f = go (f a) where
     go (Run l' b) = Run (l' * l) b
     go (CatNode _ x y) = go x <> go y
+
+reverseCT :: CatTree -> CatTree
+reverseCT r@(Run _ _) = r
+reverseCT (CatNode l a b) = CatNode l (reverseCT b) (reverseCT a)
