@@ -40,11 +40,14 @@ bias :: forall s . Layer s
 bias = Layer (ILayer 0 0)
 
 data NNOperation =
-  WeightPatch Int Int IWeightSelector |
-  ApplyActivation Int Int ActivationFunction |
-  ApplyRandomization Int Int (forall g . RandomGen g =>
+  WeightPatch Word Word IWeightSelector |
+  ApplyActivation Word Word ActivationFunction |
+  ApplyRandomization Word Word (forall g . RandomGen g =>
     g -> Double -> Double -> (Double, Double,g)
-   )
+   ) |
+  PointwiseSum Word [Word] |
+  PointwiseProduct Word [Word] |
+  PointwiseUnary Word Word (Double -> (Double, Double))
 
 newtype NNBuilder s a = NNBuilder (
   Word -> Word ->
