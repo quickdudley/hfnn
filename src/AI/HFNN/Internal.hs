@@ -1,6 +1,8 @@
 {-# LANGUAGE RankNTypes #-}
 module AI.HFNN.Internal (
-
+  WeightSelector,
+  Layer,
+  bias
  ) where
 
 import Data.Semigroup
@@ -13,13 +15,27 @@ import System.IO.Unsafe
 import AI.HFNN.Activation
 
 -- | Represents the relationship between a linear array of doubles and a
--- particular weight matrix
-data WeightSelector = WeightSelector {
+-- particular weight matrix. Phantom type to ensure only directed acyclic
+-- graphs are created.
+newtype WeightSelector s = WS IWeightSelector
+
+data IWeightSelector = IWeightSelector {
   weightsInputs :: Int,
   weightsOutputs :: Int,
-  getWeight :: Ptr Double -> Int -> Int -> IO Double,
-  updateWeight :: Ptr Double -> Int -> Int -> (Double -> Double) -> IO ()
+  getWeight :: (Int -> IO Double) -> Int -> Int -> IO Double,
+  updateWeight :: (Int -> Double -> IO ()) -> Int -> Int -> Double -> IO ()
  }
+
+-- | Represents a set of neurons which take inputs from a common set of parents.
+-- Phantom type to ensure directed acyclic graphs are generated, and that
+-- no arrays are indexed out of bounds.
+newtype Layer s = Layer ILayer
+
+data ILayer = ILayer Int Int
+
+-- | Bias node: value is always 1.
+bias :: forall s . Layer s
+bias = Layer (ILayer 0 0)
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
