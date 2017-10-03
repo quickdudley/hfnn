@@ -12,6 +12,7 @@ import Foreign.Ptr
 import Data.Array.Storable
 import Foreign.Storable
 import System.IO.Unsafe
+import System.Random
 
 import AI.HFNN.Activation
 
@@ -32,7 +33,7 @@ data IWeightSelector = IWeightSelector {
 -- no arrays are indexed out of bounds.
 newtype Layer s = Layer ILayer
 
-data ILayer = ILayer Int Int
+data ILayer = ILayer Word Word
 
 -- | Bias node: value is always 1.
 bias :: forall s . Layer s
@@ -40,7 +41,10 @@ bias = Layer (ILayer 0 0)
 
 data NNOperation =
   WeightPatch Int Int IWeightSelector |
-  ApplyActivation Int Int ActivationFunction
+  ApplyActivation Int Int ActivationFunction |
+  ApplyRandomization Int Int (forall g . RandomGen g =>
+    g -> Double -> Double -> (Double, Double,g)
+   )
 
 newtype NNBuilder s a = NNBuilder (
   Word -> Word ->
@@ -71,6 +75,13 @@ instance Monad (NNBuilder s) where
     NNBuilder b = f a'
     in b n1 w1 i1 o1 p1
    )
+
+addInputs :: Word -> NNBuilder s (Layer s)
+addInputs d = NNBuilder (\n w i o p -> let
+  n' = n + d
+  e = n' - 1
+  in (n', w, i <> mconcat (map pure [n .. e]), o, p, Layer (ILayer n e))
+ )
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
