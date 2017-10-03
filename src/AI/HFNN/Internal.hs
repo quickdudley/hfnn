@@ -2,6 +2,7 @@
 module AI.HFNN.Internal (
   WeightSelector,
   Layer,
+  NNBuilder,
   bias
  ) where
 
@@ -36,6 +37,36 @@ data ILayer = ILayer Int Int
 -- | Bias node: value is always 1.
 bias :: forall s . Layer s
 bias = Layer (ILayer 0 0)
+
+data NNOperation =
+  WeightPatch Int Int IWeightSelector |
+  ApplyActivation Int Int ActivationFunction
+
+newtype NNBuilder s a = NNBuilder (Int -> Int -> CatTree NNOperation ->
+  (Int, Int, CatTree NNOperation, a)
+ )
+
+instance Functor (NNBuilder s) where
+  fmap f (NNBuilder s) = NNBuilder (\n w o -> let
+    (n', w', o', a) = s n w o
+    in (n', w', o', f a)
+   )
+
+instance Applicative (NNBuilder s) where
+  pure a = NNBuilder (\n w o -> (n, w, o, a))
+  NNBuilder f <*> NNBuilder b = NNBuilder (\n0 w0 o0 -> let
+    (n1, w1, o1, f') = f n0 w0 o0
+    (n2, w2, o2, b') = b n1 w1 o1
+    in (n2, w2, o2, f' b')
+   )
+
+instance Monad (NNBuilder s) where
+  return = pure
+  NNBuilder a >>= f = NNBuilder (\n0 w0 o0 -> let
+    (n1, w1, o1, a') = a n0 w0 o0
+    NNBuilder b = f a'
+    in b n1 w1 o1
+   )
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
