@@ -42,30 +42,34 @@ data NNOperation =
   WeightPatch Int Int IWeightSelector |
   ApplyActivation Int Int ActivationFunction
 
-newtype NNBuilder s a = NNBuilder (Int -> Int -> CatTree NNOperation ->
-  (Int, Int, CatTree NNOperation, a)
+newtype NNBuilder s a = NNBuilder (
+  Word -> Word ->
+  CatTree Word ->
+  CatTree Word ->
+  CatTree NNOperation ->
+  (Word, Word, CatTree Word, CatTree Word, CatTree NNOperation, a)
  )
 
 instance Functor (NNBuilder s) where
-  fmap f (NNBuilder s) = NNBuilder (\n w o -> let
-    (n', w', o', a) = s n w o
-    in (n', w', o', f a)
+  fmap f (NNBuilder s) = NNBuilder (\n w i o p -> let
+    (n', w', i', o', p', a) = s n w i o p
+    in (n', w', i', o', p', f a)
    )
 
 instance Applicative (NNBuilder s) where
-  pure a = NNBuilder (\n w o -> (n, w, o, a))
-  NNBuilder f <*> NNBuilder b = NNBuilder (\n0 w0 o0 -> let
-    (n1, w1, o1, f') = f n0 w0 o0
-    (n2, w2, o2, b') = b n1 w1 o1
-    in (n2, w2, o2, f' b')
+  pure a = NNBuilder (\n w i o p -> (n, w, i, o, p, a))
+  NNBuilder f <*> NNBuilder b = NNBuilder (\n0 w0 i0 o0 p0 -> let
+    (n1, w1, i1, o1, p1, f') = f n0 w0 i0 o0 p0
+    (n2, w2, i2, o2, p2, b') = b n1 w1 i1 o1 p1
+    in (n2, w2, i2, o2, p2, f' b')
    )
 
 instance Monad (NNBuilder s) where
   return = pure
-  NNBuilder a >>= f = NNBuilder (\n0 w0 o0 -> let
-    (n1, w1, o1, a') = a n0 w0 o0
+  NNBuilder a >>= f = NNBuilder (\n0 w0 i0 o0 p0 -> let
+    (n1, w1, i1, o1, p1, a') = a n0 w0 i0 o0 p0
     NNBuilder b = f a'
-    in b n1 w1 o1
+    in b n1 w1 i1 o1 p1
    )
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
