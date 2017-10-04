@@ -28,6 +28,9 @@ data IWeightSelector = IWeightSelector {
   updateWeight :: (Word -> Double -> IO ()) -> Word -> Word -> Double -> IO ()
  }
 
+wsInputs (WS a) = weightsInputs a
+wsOutputs (WS a) = weightsOutputs a
+
 -- | Represents a set of neurons which take inputs from a common set of parents.
 -- Phantom type to ensure directed acyclic graphs are generated, and that
 -- no arrays are indexed out of bounds.
@@ -45,6 +48,7 @@ data NNOperation (a :: Bool) where
   ApplyRandomization :: Word -> Word -> (forall g . RandomGen g =>
     g -> Double -> Double -> (Double, Double,g)
    ) -> NNOperation True
+  SoftMax :: Word -> Word -> Word -> NNOperation a
   PointwiseSum :: Word -> [Word] -> NNOperation a
   PointwiseProduct :: Word -> [Word] -> NNOperation a
   PointwiseUnary :: Word -> Word -> (Double -> (Double, Double)) ->
@@ -105,6 +109,25 @@ fixedWeights piw pow d = WS (IWeightSelector {
   getWeight = const $ const $ const $ return d,
   updateWeight = const $ const $ const $ const $ return ()
  })
+
+standardLayer :: [(Layer s, WeightSelector s)] -> ActivationFunction ->
+  NNBuilder d s (Maybe (Layer s))
+standardLayer [] _ = return Nothing
+standardLayer l@((l1,w1):r) af = let
+  ls = wsOutputs w1
+  in NNBuilder (\n w i o p -> let
+    n' = n + ls
+    e = n' - 1
+    wo = mconcat <$> mapM (\(Layer (ILayer b e'), WS w0) ->
+      if e' - b + 1 == weightsInputs w0 && weightsOutputs w0 == ls
+        then Just $ pure $ WeightPatch b n w0
+        else Nothing
+     ) l
+    aaf = pure $ ApplyActivation n e af
+    in case wo of
+      Nothing -> (n, w, i, o, p, Nothing)
+      Just wo' -> (n + ls, w, i, o, p <> wo' <> aaf, Just (Layer (ILayer n e)))
+ )
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
