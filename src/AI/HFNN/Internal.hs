@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RankNTypes,KindSignatures,DataKinds,GADTs #-}
 module AI.HFNN.Internal (
   WeightSelector,
   Layer,
@@ -22,10 +22,10 @@ import AI.HFNN.Activation
 newtype WeightSelector s = WS IWeightSelector
 
 data IWeightSelector = IWeightSelector {
-  weightsInputs :: Int,
-  weightsOutputs :: Int,
-  getWeight :: (Int -> IO Double) -> Int -> Int -> IO Double,
-  updateWeight :: (Int -> Double -> IO ()) -> Int -> Int -> Double -> IO ()
+  weightsInputs :: Word,
+  weightsOutputs :: Word,
+  getWeight :: (Word -> IO Double) -> Word -> Word -> IO Double,
+  updateWeight :: (Word -> Double -> IO ()) -> Word -> Word -> Double -> IO ()
  }
 
 -- | Represents a set of neurons which take inputs from a common set of parents.
@@ -39,31 +39,32 @@ data ILayer = ILayer Word Word
 bias :: forall s . Layer s
 bias = Layer (ILayer 0 0)
 
-data NNOperation =
-  WeightPatch Word Word IWeightSelector |
-  ApplyActivation Word Word ActivationFunction |
-  ApplyRandomization Word Word (forall g . RandomGen g =>
+data NNOperation (a :: Bool) where
+  WeightPatch :: Word -> Word -> IWeightSelector -> NNOperation a
+  ApplyActivation :: Word -> Word -> ActivationFunction -> NNOperation a
+  ApplyRandomization :: Word -> Word -> (forall g . RandomGen g =>
     g -> Double -> Double -> (Double, Double,g)
-   ) |
-  PointwiseSum Word [Word] |
-  PointwiseProduct Word [Word] |
-  PointwiseUnary Word Word (Double -> (Double, Double))
+   ) -> NNOperation True
+  PointwiseSum :: Word -> [Word] -> NNOperation a
+  PointwiseProduct :: Word -> [Word] -> NNOperation a
+  PointwiseUnary :: Word -> Word -> (Double -> (Double, Double)) ->
+    NNOperation a
 
-newtype NNBuilder s a = NNBuilder (
+newtype NNBuilder (d :: Bool) s a = NNBuilder (
   Word -> Word ->
   CatTree Word ->
   CatTree Word ->
-  CatTree NNOperation ->
-  (Word, Word, CatTree Word, CatTree Word, CatTree NNOperation, a)
+  CatTree (NNOperation d) ->
+  (Word, Word, CatTree Word, CatTree Word, CatTree (NNOperation d), a)
  )
 
-instance Functor (NNBuilder s) where
+instance Functor (NNBuilder d s) where
   fmap f (NNBuilder s) = NNBuilder (\n w i o p -> let
     (n', w', i', o', p', a) = s n w i o p
     in (n', w', i', o', p', f a)
    )
 
-instance Applicative (NNBuilder s) where
+instance Applicative (NNBuilder d s) where
   pure a = NNBuilder (\n w i o p -> (n, w, i, o, p, a))
   NNBuilder f <*> NNBuilder b = NNBuilder (\n0 w0 i0 o0 p0 -> let
     (n1, w1, i1, o1, p1, f') = f n0 w0 i0 o0 p0
@@ -71,7 +72,7 @@ instance Applicative (NNBuilder s) where
     in (n2, w2, i2, o2, p2, f' b')
    )
 
-instance Monad (NNBuilder s) where
+instance Monad (NNBuilder d s) where
   return = pure
   NNBuilder a >>= f = NNBuilder (\n0 w0 i0 o0 p0 -> let
     (n1, w1, i1, o1, p1, a') = a n0 w0 i0 o0 p0
@@ -79,12 +80,31 @@ instance Monad (NNBuilder s) where
     in b n1 w1 i1 o1 p1
    )
 
-addInputs :: Word -> NNBuilder s (Layer s)
+addInputs :: Word -> NNBuilder d s (Layer s)
 addInputs d = NNBuilder (\n w i o p -> let
   n' = n + d
   e = n' - 1
   in (n', w, i <> mconcat (map pure [n .. e]), o, p, Layer (ILayer n e))
  )
+
+addBaseWeights :: Word -> Word -> NNBuilder d s (WeightSelector s)
+addBaseWeights piw pow = NNBuilder (\n w i o p -> let
+  w' = piw * pow + w
+  in (n, w', i, o, p, WS (IWeightSelector {
+    weightsInputs = piw,
+    weightsOutputs = pow,
+    getWeight = \a ii oi -> a (w + ii + piw * oi),
+    updateWeight = \a ii oi d -> a (w + ii + piw * oi) d
+   }))
+ )
+
+fixedWeights :: Word -> Word -> Double -> WeightSelector s
+fixedWeights piw pow d = WS (IWeightSelector {
+  weightsInputs = piw,
+  weightsOutputs = pow,
+  getWeight = const $ const $ const $ return d,
+  updateWeight = const $ const $ const $ const $ return ()
+ })
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
@@ -96,6 +116,22 @@ data CatTree a =
 catTreeSize (Run s _) = s
 catTreeSize (CatNode s _ _) = s
 catTreeSize CatNil = 0
+
+instance (Eq a) => Eq (CatTree a) where
+  a == b = catTreeSize a == catTreeSize b && case a of
+    Run _ v -> foldr (\v' r -> v' == v && r) True b
+    CatNode _ l r -> let
+      (bl,br) = splitCT b (catTreeSize l)
+      in l == bl && r == br
+    CatNil -> foldr (const $ const False) True b
+
+-- Current implementation breaks Eq instance
+instance (Show a) => Show (CatTree a) where
+  showsPrec _ t = ('[':) . go t . (']':) where
+    go CatNil = id
+    go (Run 1 v) = showsPrec 0 v
+    go (Run n v) = showsPrec 8 v . (" * "++) . showsPrec 8 n
+    go (CatNode _ l r) = go l . (", "++) . go r
 
 instance Semigroup (CatTree a) where
   CatNil <> b = b
@@ -146,7 +182,7 @@ splitCT CatNil _ = (CatNil, CatNil)
 splitCT r 0 = (CatNil, r)
 splitCT r@(Run n a) s = if n <= s
   then (r,CatNil)
-  else (Run s a, Run (s - n) a)
+  else (Run s a, Run (n - s) a)
 splitCT r@(CatNode n a b) s = if n <= s
   then (r,CatNil)
   else case catTreeSize a `compare` s of
