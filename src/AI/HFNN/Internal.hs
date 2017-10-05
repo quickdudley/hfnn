@@ -54,6 +54,8 @@ data NNOperation (a :: Bool) where
   PointwiseUnary :: Word -> Word -> (Double -> (Double, Double)) ->
     NNOperation a
 
+-- | A monad for assembling feedforward networks. The boolean type parameter
+-- indicates whether or not the network may use stochastic units
 newtype NNBuilder (d :: Bool) s a = NNBuilder (
   Word -> Word ->
   CatTree Word ->
@@ -141,7 +143,7 @@ stochasticLayer ip af rf = NNBuilder (\n w i o p -> let
     Nothing -> (n, w, i, o, p, Nothing)
     Just l@(Layer (ILayer b e)) -> (n1, w1, i1, o1, p1 <> pure (
       ApplyRandomization b e rf
-     ), l)
+     ), r)
  )
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
