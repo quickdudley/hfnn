@@ -129,6 +129,21 @@ standardLayer l@((l1,w1):r) af = let
       Just wo' -> (n + ls, w, i, o, p <> wo' <> aaf, Just (Layer (ILayer n e)))
  )
 
+stochasticLayer :: [(Layer s, WeightSelector s)] -> ActivationFunction ->
+  (forall g . RandomGen g =>
+    g -> Double -> Double -> (Double, Double,g)
+   ) ->
+  NNBuilder True s (Maybe (Layer s))
+stochasticLayer ip af rf = NNBuilder (\n w i o p -> let
+  NNBuilder sf = standardLayer ip af
+  (n1,w1,i1,o1,p1,r) = sf n w i o p
+  in case r of
+    Nothing -> (n, w, i, o, p, Nothing)
+    Just l@(Layer (ILayer b e)) -> (n1, w1, i1, o1, p1 <> pure (
+      ApplyRandomization b e rf
+     ), l)
+ )
+
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
 data CatTree a =
