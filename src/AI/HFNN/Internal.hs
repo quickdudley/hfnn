@@ -3,7 +3,12 @@ module AI.HFNN.Internal (
   WeightSelector,
   Layer,
   NNBuilder,
-  bias
+  bias,
+  addInputs,
+  addBaseWeights,
+  fixedWeights,
+  standardLayer,
+  stochasticLayer
  ) where
 
 import Data.Semigroup
