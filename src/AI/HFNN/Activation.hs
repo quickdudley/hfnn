@@ -4,13 +4,12 @@ module AI.HFNN.Activation (
   modifiedCuberoot,
   logistic,
   htan,
+  ahsin,
   relu,
   softplus
  ) where
 
 import qualified Data.ByteString as BS
-
-data DerivativeBase = X | Y deriving (Ord,Eq)
 
 data ActivationFunction = ActivationFunction {
   activationFunction :: [Double] -> [(Double, Double)],
@@ -43,9 +42,16 @@ logistic = nogl {
     in (y, y * (1 - y))
  }
 
+-- | Hyperbolic tangent
 htan :: ActivationFunction
 htan = nogl {
   activationFunction = map $ \x -> let t = tanh x in (t, 1 - t^2)
+ }
+
+-- | Inverse hyperbolic sine
+ahsin :: ActivationFunction
+ahsin = nogl {
+  activationFunction = map $ \x -> (asinh x, 1 / sqrt (x ^ 2 + 1))
  }
 
 relu :: ActivationFunction 
@@ -58,14 +64,4 @@ relu = nogl {
 softplus :: ActivationFunction
 softplus = nogl {
   activationFunction = map $ \x -> (log (1 + exp x), 1 / (1 + exp (-x)))
- }
-
-softmax :: ActivationFunction
-softmax = nogl {
-  activationFunction = \z -> let
-    ez = map exp z
-    d = sum ez
-    in map (\q -> let
-      s = q / d
-      in (s, s * (1 - s))) ez
  }
