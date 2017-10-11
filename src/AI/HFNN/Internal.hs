@@ -14,7 +14,6 @@ module AI.HFNN.Internal (
 import Data.Semigroup
 import Data.Word
 import Foreign.Ptr
-import Data.Array.Storable
 import Foreign.Storable
 import System.IO.Unsafe
 import System.Random
