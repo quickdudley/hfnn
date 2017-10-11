@@ -23,7 +23,7 @@ nogl = let
 
 -- | Experimental activation function based on cube root. It should be less
 -- prone to the vanishing gradient problem than the logistic function and other
--- sigmoid functions, and unlike cube root itself the derivative is never 1/0.
+-- sigmoid functions, and unlike cube root itself the derivative is never 1÷0.
 modifiedCuberoot :: ActivationFunction
 modifiedCuberoot = nogl {
   activationFunction = map $ \x' -> let

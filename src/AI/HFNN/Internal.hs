@@ -11,8 +11,11 @@ module AI.HFNN.Internal (
   stochasticLayer
  ) where
 
+import Control.Monad
+import Data.Array.IO
 import Data.Semigroup
 import Data.Word
+import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
 import System.IO.Unsafe
@@ -68,6 +71,43 @@ newtype NNBuilder (d :: Bool) s a = NNBuilder (
   (Word, Word, CatTree Word, CatTree Word, CatTree (NNOperation d), a)
  )
 
+-- | The directed acyclic graph and activation functions making up a neural
+-- network. Actual weights are stored in the corresponding 'WeightValues'
+-- structures.
+data NNStructure (d :: Bool) = NNStructure {
+  countNodes :: Word,
+  countBaseWeights :: Word,
+  inputNodes :: IOUArray Word Word,
+  outputNodes :: IOUArray Word Word,
+  nnOperations :: IOArray Word (NNOperation d)
+ }
+
+-- | A set of weight values to be used with an 'NNStructure'
+data WeightValues = WeightValues {
+  countWeightValues :: Word,
+  weightValues :: ForeignPtr Double
+ }
+
+-- | The result of running a feed forward pass.
+data FeedForward (d :: Bool) = FeedForward {
+  ffBaseStructure :: NNStructure d,
+  ffNodeGradients :: ForeignPtr Double,
+  ffNodeOutputs :: ForeignPtr Double
+ }
+
+-- | A set of weight deltas
+data WeightUpdate = WeightUpdate {
+  weightUpdateCount :: Word,
+  weightUpdate :: ForeignPtr Double
+ }
+
+-- | Represents the error gradient which has reached the input nodes during
+-- backpropagation.
+data InputTension = InputTension {
+  tensionInputCount :: Word,
+  inputTension :: ForeignPtr Double
+ }
+
 instance Functor (NNBuilder d s) where
   fmap f (NNBuilder s) = NNBuilder (\n w i o p -> let
     (n', w', i', o', p', a) = s n w i o p
@@ -89,6 +129,25 @@ instance Monad (NNBuilder d s) where
     NNBuilder b = f a'
     in b n1 w1 i1 o1 p1
    )
+
+instance Monoid WeightUpdate where
+  mempty = unsafePerformIO $ do
+    p <- newForeignPtr_ nullPtr
+    return $ WeightUpdate { weightUpdateCount = 0, weightUpdate = p }
+  mappend a b = mconcat [a,b]
+  mconcat [] = mempty
+  mconcat [a] = a
+  mconcat l = unsafePerformIO $ do
+    let s = maximum $ map weightUpdateCount l
+    f <- mallocForeignPtrArray (fromIntegral s)
+    withForeignPtr f $ \p -> do
+      forM_ [0 .. s - 1] $ \i -> pokeElemOff p (fromIntegral i) 0
+      forM_ l $ \a -> withForeignPtr (weightUpdate a) $ \p' ->
+        forM_ [0 .. weightUpdateCount a - 1] $ \i -> do
+          rt <- peekElemOff p (fromIntegral i)
+          c <- peekElemOff p' (fromIntegral i)
+          pokeElemOff p (fromIntegral i) (rt + c)
+    return $ WeightUpdate { weightUpdateCount = s, weightUpdate = f }
 
 addInputs :: Word -> NNBuilder d s (Layer s)
 addInputs d = NNBuilder (\n w i o p -> let
@@ -148,6 +207,11 @@ stochasticLayer ip af rf = NNBuilder (\n w i o p -> let
     Just l@(Layer (ILayer b e)) -> (n1, w1, i1, o1, p1 <> pure (
       ApplyRandomization b e rf
      ), r)
+ )
+
+addOutputs :: Layer s -> NNBuilder d s ()
+addOutputs (Layer (ILayer b e)) = NNBuilder (\n w i o p ->
+  (n, w, i, o <> mconcat (map pure [b .. e]), p, ())
  )
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
