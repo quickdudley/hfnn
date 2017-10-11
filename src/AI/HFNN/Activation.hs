@@ -3,6 +3,7 @@ module AI.HFNN.Activation (
   ActivationFunction(..),
   modifiedCuberoot,
   logistic,
+  htan,
   relu,
   softplus
  ) where
@@ -40,6 +41,11 @@ logistic = nogl {
   activationFunction = map $ \x -> let
     y = 1 / (1 + exp (-x))
     in (y, y * (1 - y))
+ }
+
+htan :: ActivationFunction
+htan = nogl {
+  activationFunction = map $ \x -> let t = tanh x in (t, 1 - t^2)
  }
 
 relu :: ActivationFunction 
