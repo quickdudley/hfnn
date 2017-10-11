@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes,KindSignatures,DataKinds,GADTs #-}
+{-# LANGUAGE RankNTypes,KindSignatures,DataKinds,GADTs,FlexibleContexts #-}
 module AI.HFNN.Internal (
   WeightSelector,
   Layer,
@@ -218,6 +218,31 @@ addOutputs :: Layer s -> NNBuilder d s ()
 addOutputs (Layer (ILayer b e)) = NNBuilder (\n w i o p ->
   (n, w, i, o <> mconcat (map pure [b .. e]), p, ())
  )
+
+runNNBuilder :: forall d a .
+  (forall s . NNBuilder d s a) -> (NNStructure d, a)
+runNNBuilder (NNBuilder bf) = let
+  (n, w, i, o, p, a) = bf 1 0 mempty mempty mempty
+  in unsafePerformIO $ do
+    ia <- newArray (0, catTreeSize i - 1) 0
+    oa <- newArray (0, catTreeSize o - 1) 0
+    pa <- newArray (0, catTreeSize p - 1) undefined
+    let
+      fill :: MArray a e IO => CatTree e -> a Word e-> IO ()
+      fill ct ar = foldr (\x r d -> do
+        writeArray ar d x
+        r (d + 1)
+       ) (const $ return ()) ct 0
+    fill i ia
+    fill o oa
+    fill p pa
+    return (NNStructure {
+      countNodes = n,
+      countBaseWeights = w,
+      inputNodes = ia,
+      outputNodes = oa,
+      nnOperations = pa
+     },a)
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
