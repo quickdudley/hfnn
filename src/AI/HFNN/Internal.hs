@@ -288,13 +288,21 @@ instance Functor CatTree where
 
 instance Foldable CatTree where
   foldMap f = go where
-    go (Run l a) = mr l where
+    go (Run l a) = mt [(t,1),(mempty,0)] where
       t = f a
-      mr 1 = t
-      mr n = let
-        (nl,m) = n `divMod` 2
-        nr = nl + m
-        in mappend (mr nl) (mr nr)
+      mt (p1@(a1,s1):r1@(~((a2,s2):r))) = let
+        sd = s1 + s1
+        st = s1 + s2
+        in case s1 `compare` l of
+          GT -> mt r1 -- should be unreachable
+          EQ -> a1
+          LT -> case sd `compare` l of
+            GT -> case st `compare` l of
+              GT -> mt (p1:r)
+              EQ -> mappend a1 a2
+              LT -> mt ((mappend a1 a2, st):r)
+            EQ -> mappend a1 a1
+            LT -> mt ((mappend a1 a1, sd):p1:r1)
     go (CatNode _ a b) = mappend (go a) (go b)
     go CatNil = mempty
 
