@@ -285,6 +285,39 @@ initialWeights' s g r = unsafePerformIO $ do
     in go 0 g
   return (WeightValues {weightValues = f, countWeightValues = s}, g')
 
+feedForward ::
+  NNStructure False -> WeightValues-> [Double] -> FeedForward False
+stochasticFeedForward :: RandomGen g =>
+  NNStructure d -> WeightValues -> [Double] -> g -> (FeedForward d, g)
+(feedForward, stochasticFeedForward) = let
+  init s = do
+    let a = mallocForeignPtrArray $ fromIntegral $ countNodes s
+    o <- a
+    g <- a
+    forM_ [o,g] $ \f -> withForeignPtr f $ \p ->
+      forM_ [0 .. countNodes s - 1] $ \i -> pokeElemOff p (fromIntegral i) 0
+    return $ FeedForward {
+      ffBaseStructure = s,
+      ffNodeGradients = g,
+      ffNodeOutputs = o
+     }
+  loadInputs f d = withForeignPtr (ffNodeOutputs f) $ \p -> do
+    ab <- getBounds $ inputNodes $ ffBaseStructure f
+    forM_ (zip (range ab) d) $ \(i,x) -> do
+      n <- readArray (inputNodes $ ffBaseStructure f) i
+      pokeElemOff p (fromIntegral n) x
+  step o g w p = case p of
+    WeightPatch s t ws -> forM_ [0 .. weightsOutputs ws - 1] $ \j -> do
+      v <- (sum <$>) $ forM [0 .. weightsInputs ws - 1] $ \i -> do
+        ia <- peekElemOff o (fromIntegral (i + s))
+        sw <- getWeight ws w i j
+        return (ia * sw)
+      let i = fromIntegral (j + t)
+      ov <- peekElemOff o i
+      pokeElemOff o i (v + ov)
+  in undefined
+
+
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
 data CatTree a =
