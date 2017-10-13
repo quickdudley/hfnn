@@ -145,6 +145,20 @@ instance Monad (NNBuilder d s) where
     in b n1 w1 i1 o1 p1
    )
 
+instance Show WeightValues where
+  showsPrec _ wv = unsafePerformIO $ withForeignPtr (weightValues wv) $ \p ->
+    let
+      go :: Bool -> Word -> IO ShowS
+      go d i
+        | i == countWeightValues wv = touchForeignPtr (weightValues wv) >>
+            return ('}':)
+        | otherwise = do
+          v <- peekElemOff p (fromIntegral i)
+          r <- unsafeInterleaveIO $ go True (i + 1)
+          let z = showsPrec 0 v . r
+          return $ if d then (", "++) . z else z
+      in (('{':) .) <$> go False 0
+
 instance Monoid WeightUpdate where
   mempty = unsafePerformIO $ do
     p <- newForeignPtr_ nullPtr
