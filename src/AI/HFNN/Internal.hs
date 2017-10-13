@@ -8,12 +8,16 @@ module AI.HFNN.Internal (
   FeedForward,
   WeightUpdate,
   InputTension,
+  structureNodes,
+  structureBaseWeights,
   bias,
   addInputs,
   addBaseWeights,
   fixedWeights,
   standardLayer,
-  stochasticLayer
+  stochasticLayer,
+  initialWeights,
+  initialWeights'
  ) where
 
 import Control.Monad
@@ -86,6 +90,12 @@ data NNStructure (d :: Bool) = NNStructure {
   outputNodes :: IOUArray Word Word,
   nnOperations :: IOArray Word (NNOperation d)
  }
+
+structureNodes :: NNStructure d -> Word
+structureNodes = countNodes
+
+structureBaseWeights :: NNStructure d -> Word
+structureBaseWeights = countBaseWeights
 
 -- | A set of weight values to be used with an 'NNStructure'
 data WeightValues = WeightValues {
@@ -243,6 +253,23 @@ runNNBuilder (NNBuilder bf) = let
       outputNodes = oa,
       nnOperations = pa
      },a)
+
+initialWeights :: RandomGen g => NNStructure d -> g -> (Double,Double) ->
+  (WeightValues, g)
+initialWeights s g r = initialWeights' (countBaseWeights s) g r
+
+initialWeights' :: RandomGen g => Word -> g -> (Double,Double) ->
+  (WeightValues, g)
+initialWeights' s g r = unsafePerformIO $ do
+  f <- mallocForeignPtrArray (fromIntegral s)
+  g' <- withForeignPtr f $ \p -> let
+    go i g1
+      | i == s = return g1
+      | otherwise = let
+        (v,g2) = randomR r g1
+        in pokeElemOff p (fromIntegral i) v >> go (i + 1) g2
+    in go 0 g
+  return (WeightValues {weightValues = f, countWeightValues = s}, g')
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
