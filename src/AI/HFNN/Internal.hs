@@ -306,16 +306,33 @@ stochasticFeedForward :: RandomGen g =>
     forM_ (zip (range ab) d) $ \(i,x) -> do
       n <- readArray (inputNodes $ ffBaseStructure f) i
       pokeElemOff p (fromIntegral n) x
+  step :: Ptr Double -> Ptr Double -> Ptr Double -> NNOperation d -> IO ()
   step o g w p = case p of
     WeightPatch s t ws -> forM_ [0 .. weightsOutputs ws - 1] $ \j -> do
       v <- (sum <$>) $ forM [0 .. weightsInputs ws - 1] $ \i -> do
         ia <- peekElemOff o (fromIntegral (i + s))
-        sw <- getWeight ws w i j
+        sw <- getWeight ws (peekElemOff w . fromIntegral) i j
         return (ia * sw)
       let i = fromIntegral (j + t)
       ov <- peekElemOff o i
       pokeElemOff o i (v + ov)
-  in undefined
+    ApplyActivation b e af -> do
+      t <- forM [b .. e] $ \i -> peekElemOff o (fromIntegral i)
+      forM_ (zip [b .. e] (activationFunction af t)) $ \(i, (a,g')) -> do
+        pokeElemOff o (fromIntegral i) a
+        pokeElemOff g (fromIntegral i) g'
+  ff s w i = unsafePerformIO $ do
+    r <- init s
+    loadInputs r i
+    (p0,pn) <- getBounds (nnOperations s)
+    withForeignPtr (weightValues w) $ \w' ->
+      withForeignPtr (ffNodeOutputs r) $ \o ->
+        withForeignPtr (ffNodeGradients r) $ \g ->
+          forM_ [p0 .. pn] $ \i -> do
+            op <- readArray (nnOperations s) i
+            step o g w' op
+    return r
+  in (ff, undefined)
 
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
