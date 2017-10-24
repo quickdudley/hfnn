@@ -17,7 +17,10 @@ module AI.HFNN.Internal (
   standardLayer,
   stochasticLayer,
   initialWeights,
-  initialWeights'
+  initialWeights',
+  feedForward,
+  getOutput,
+  getOutputs
  ) where
 
 import Control.Monad
@@ -334,6 +337,30 @@ stochasticFeedForward :: RandomGen g =>
     return r
   in (ff, undefined)
 
+getOutput :: FeedForward d -> Word -> Double
+getOutput r i = unsafePerformIO $ do
+  b <- getBounds $ outputNodes $ ffBaseStructure r
+  if inRange b i
+    then do
+      ri <- readArray (outputNodes $ ffBaseStructure r) i
+      v <- withForeignPtr (ffNodeOutputs r) $ \p ->
+        peekElemOff p (fromIntegral ri)
+      touchForeignPtr (ffNodeOutputs r)
+      return v
+    else
+      return 0
+
+getOutputs :: FeedForward d -> [Double]
+getOutputs r = unsafePerformIO $ withForeignPtr (ffNodeOutputs r) $ \p -> do
+  b <- getBounds $ outputNodes $ ffBaseStructure r
+  let
+    go [] = [] <$ touchForeignPtr (ffNodeOutputs r)
+    go (i:n) = do
+      ri <- readArray (outputNodes $ ffBaseStructure r) i
+      v <- peekElemOff p (fromIntegral ri)
+      c <- unsafeInterleaveIO (go n)
+      return (v:c)
+  go (range b)
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
