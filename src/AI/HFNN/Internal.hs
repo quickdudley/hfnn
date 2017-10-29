@@ -12,6 +12,7 @@ module AI.HFNN.Internal (
   structureBaseWeights,
   bias,
   addInputs,
+  layerSize,
   addBaseWeights,
   fixedWeights,
   standardLayer,
@@ -24,6 +25,7 @@ module AI.HFNN.Internal (
   getOutput,
   getOutputs,
   backPropagate,
+  inputError,
   applyDelta
  ) where
 
@@ -209,6 +211,9 @@ addInputs d = NNBuilder (\n w i o p -> let
   e = n' - 1
   in (n', w, i <> mconcat (map pure [n .. e]), o, p, Layer (ILayer n e))
  )
+
+layerSize :: Layer s -> Word
+layerSize (Layer (ILayer n e)) = e - n + 1
 
 addBaseWeights :: Word -> Word -> NNBuilder d s (WeightSelector s)
 addBaseWeights piw pow = NNBuilder (\n w i o p -> let
@@ -439,6 +444,16 @@ backPropagate r e = unsafePerformIO $ do
      tensionInputCount = itc,
      inputTension = it
     })
+
+inputError :: InputTension -> [Double]
+inputError t = unsafePerformIO $ withForeignPtr (inputTension t) $ \p -> let
+  go n
+    | n == tensionInputCount t = [] <$ touchForeignPtr (inputTension t)
+    | otherwise = do
+      v <- peekElemOff p (fromIntegral n)
+      r <- unsafeInterleaveIO $ go (n + 1)
+      return (v:r)
+  in go 0
 
 applyDelta :: Double -> WeightValues -> WeightUpdate -> WeightValues
 applyDelta lr wv wu = unsafePerformIO $ do
