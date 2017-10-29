@@ -28,6 +28,7 @@ import Data.Array.IO
 import Data.Semigroup
 import Data.Word
 import Foreign.ForeignPtr
+import Foreign.Marshal.Alloc
 import Foreign.Ptr
 import Foreign.Storable
 import System.IO.Unsafe
@@ -109,6 +110,7 @@ data WeightValues = WeightValues {
 -- | The result of running a feed forward pass.
 data FeedForward (d :: Bool) = FeedForward {
   ffBaseStructure :: NNStructure d,
+  ffBaseWeights :: WeightValues,
   ffNodeGradients :: ForeignPtr Double,
   ffNodeOutputs :: ForeignPtr Double
  }
@@ -293,7 +295,7 @@ feedForward ::
 stochasticFeedForward :: RandomGen g =>
   NNStructure d -> WeightValues -> [Double] -> g -> (FeedForward d, g)
 (feedForward, stochasticFeedForward) = let
-  init s = do
+  init w s = do
     let a = mallocForeignPtrArray $ fromIntegral $ countNodes s
     o <- a
     g <- a
@@ -301,6 +303,7 @@ stochasticFeedForward :: RandomGen g =>
       forM_ [0 .. countNodes s - 1] $ \i -> pokeElemOff p (fromIntegral i) 0
     return $ FeedForward {
       ffBaseStructure = s,
+      ffBaseWeights = w,
       ffNodeGradients = g,
       ffNodeOutputs = o
      }
@@ -325,7 +328,7 @@ stochasticFeedForward :: RandomGen g =>
         pokeElemOff o (fromIntegral i) a
         pokeElemOff g (fromIntegral i) g'
   ff s w i = unsafePerformIO $ do
-    r <- init s
+    r <- init w s
     loadInputs r i
     (p0,pn) <- getBounds (nnOperations s)
     withForeignPtr (weightValues w) $ \w' ->
@@ -361,6 +364,57 @@ getOutputs r = unsafePerformIO $ withForeignPtr (ffNodeOutputs r) $ \p -> do
       c <- unsafeInterleaveIO (go n)
       return (v:c)
   go (range b)
+
+backPropagate :: FeedForward d -> [Double] -> (WeightUpdate,InputTension)
+backPropagate r e = unsafePerformIO $ do
+  ne <- callocBytes
+    (sizeOf (undefined :: Double) *
+    (fromIntegral $ countNodes $ ffBaseStructure r))
+  ob <- getBounds $ outputNodes $ ffBaseStructure r
+  forM_ (zip (range ob) e) $ \(i,ev) -> do
+    ni <- readArray (outputNodes $ ffBaseStructure r) i
+    pokeElemOff ne (fromIntegral ni) ev
+  (ai0,ain) <- getBounds $ nnOperations $ ffBaseStructure r
+  wd <- mallocForeignPtrArray $ fromIntegral $
+    countBaseWeights $ ffBaseStructure r
+  withForeignPtr wd $ \wdp ->
+    withForeignPtr (weightValues $ ffBaseWeights r) $ \w0 ->
+    withForeignPtr (ffNodeGradients r) $ \g ->
+    withForeignPtr (ffNodeOutputs r) $ \o ->
+    forM_ [ain, ain - 1 .. ai0] $ \ai -> do
+      a <- readArray (nnOperations $ ffBaseStructure r) ai
+      case a of
+        WeightPatch s t ws -> forM_ [0 .. weightsOutputs ws - 1] $ \j -> do
+          let j' = j + t
+          e <- peekElemOff ne (fromIntegral j')
+          ad <- peekElemOff g (fromIntegral j')
+          let e' = e * ad
+          forM_ [0 .. weightsInputs ws - 1] $ \i -> do
+            let i' = i + s
+            iv <- peekElemOff o (fromIntegral i')
+            updateWeight ws (\ix v -> do
+              v0 <- peekElemOff wdp (fromIntegral ix)
+              pokeElemOff wdp (fromIntegral ix) (v + v0)) i j (iv * e')
+            wij <- getWeight ws (peekElemOff w0 . fromIntegral) i j
+            ie0 <- peekElemOff ne (fromIntegral i')
+            pokeElemOff ne (fromIntegral i') (ie0 + wij * e')
+        _ -> return ()
+  itb <- getBounds $ inputNodes $ ffBaseStructure r
+  let itc = (\(a, b) -> abs (b - a)) itb
+  it <- mallocForeignPtrArray $ fromIntegral itc
+  withForeignPtr it $ \t ->
+    forM_ (range itb) $ \i -> do
+      i' <- readArray (inputNodes $ ffBaseStructure r) i
+      v <- peekElemOff ne $ fromIntegral i'
+      pokeElemOff t (fromIntegral i') v
+  free ne
+  return (WeightUpdate {
+    weightUpdateCount = countBaseWeights $ ffBaseStructure r,
+    weightUpdate = wd
+   }, InputTension {
+     tensionInputCount = itc,
+     inputTension = it
+    })
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
