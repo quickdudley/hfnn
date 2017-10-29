@@ -16,11 +16,15 @@ module AI.HFNN.Internal (
   fixedWeights,
   standardLayer,
   stochasticLayer,
+  addOutputs,
   initialWeights,
   initialWeights',
+  runNNBuilder,
   feedForward,
   getOutput,
-  getOutputs
+  getOutputs,
+  backPropagate,
+  applyDelta
  ) where
 
 import Control.Monad
@@ -164,6 +168,22 @@ instance Show WeightValues where
           return $ if d then (", "++) . z else z
       in (('{':) .) <$> go False 0
 
+instance Show WeightUpdate where
+  showsPrec _ wv = unsafePerformIO $ withForeignPtr (weightUpdate wv) $ \p ->
+    let
+      go :: Bool -> Word -> IO ShowS
+      go d i
+        | i == weightUpdateCount wv = touchForeignPtr (weightUpdate wv) >>
+            return ('}':)
+        | otherwise = do
+          v <- peekElemOff p (fromIntegral i)
+          r <- unsafeInterleaveIO $ go True (i + 1)
+          let z = showsPrec 0 v . r
+          return $ if d then (", "++) . z else z
+      in (('{':) .) <$> go False 0
+
+
+
 instance Monoid WeightUpdate where
   mempty = unsafePerformIO $ do
     p <- newForeignPtr_ nullPtr
@@ -299,8 +319,9 @@ stochasticFeedForward :: RandomGen g =>
     let a = mallocForeignPtrArray $ fromIntegral $ countNodes s
     o <- a
     g <- a
-    forM_ [o,g] $ \f -> withForeignPtr f $ \p ->
-      forM_ [0 .. countNodes s - 1] $ \i -> pokeElemOff p (fromIntegral i) 0
+    forM_ [o,g] $ \f -> withForeignPtr f $ \p -> do
+      pokeElemOff p 0 1
+      forM_ [1 .. countNodes s - 1] $ \i -> pokeElemOff p (fromIntegral i) 0
     return $ FeedForward {
       ffBaseStructure = s,
       ffBaseWeights = w,
@@ -378,6 +399,9 @@ backPropagate r e = unsafePerformIO $ do
   wd <- mallocForeignPtrArray $ fromIntegral $
     countBaseWeights $ ffBaseStructure r
   withForeignPtr wd $ \wdp ->
+    forM_ [0 .. countBaseWeights (ffBaseStructure r)] $ \i ->
+      pokeElemOff wdp (fromIntegral i) 0
+  withForeignPtr wd $ \wdp ->
     withForeignPtr (weightValues $ ffBaseWeights r) $ \w0 ->
     withForeignPtr (ffNodeGradients r) $ \g ->
     withForeignPtr (ffNodeOutputs r) $ \o ->
@@ -415,6 +439,24 @@ backPropagate r e = unsafePerformIO $ do
      tensionInputCount = itc,
      inputTension = it
     })
+
+applyDelta :: Double -> WeightValues -> WeightUpdate -> WeightValues
+applyDelta lr wv wu = unsafePerformIO $ do
+  let s = max (countWeightValues wv) (weightUpdateCount wu)
+  r <- mallocForeignPtrArray (fromIntegral s)
+  withForeignPtr r $ \p -> withForeignPtr (weightValues wv) $ \p0 ->
+    withForeignPtr (weightUpdate wu) $ \pd -> forM_ [0 .. s - 1] $ \i -> do
+      a <- if i < countWeightValues wv
+        then peekElemOff p0 (fromIntegral i)
+        else return 0
+      b <- if i < weightUpdateCount wu
+        then peekElemOff pd (fromIntegral i)
+        else return 0
+      pokeElemOff p (fromIntegral i) (a + b * lr)
+  return $ WeightValues {
+    countWeightValues = s,
+    weightValues = r
+   }
 
 -- Quick and dirty tree list. Won't bother balancing because we only need
 -- to build and traverse: no need to lookup by index.
