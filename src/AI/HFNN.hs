@@ -14,7 +14,7 @@ import AI.HFNN.Internal
 simpleLayer :: [Layer s] -> Word -> ActivationFunction ->
   NNBuilder d s (Layer s)
 simpleLayer l' s af = do
-  let l = bias : l
+  let l = bias : l'
   w <- forM l $ \l1 -> addBaseWeights (layerSize l1) s
   Just nl <- standardLayer (zip l w) af
   return nl

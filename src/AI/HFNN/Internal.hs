@@ -101,9 +101,11 @@ data NNStructure (d :: Bool) = NNStructure {
   nnOperations :: IOArray Word (NNOperation d)
  }
 
+-- | The total number of nodes in the neural network
 structureNodes :: NNStructure d -> Word
 structureNodes = countNodes
 
+-- | The number of weight variables in the neural network
 structureBaseWeights :: NNStructure d -> Word
 structureBaseWeights = countBaseWeights
 
@@ -184,8 +186,6 @@ instance Show WeightUpdate where
           return $ if d then (", "++) . z else z
       in (('{':) .) <$> go False 0
 
-
-
 instance Monoid WeightUpdate where
   mempty = unsafePerformIO $ do
     p <- newForeignPtr_ nullPtr
@@ -205,6 +205,7 @@ instance Monoid WeightUpdate where
           pokeElemOff p (fromIntegral i) (rt + c)
     return $ WeightUpdate { weightUpdateCount = s, weightUpdate = f }
 
+-- | Adds more input nodes to the neural network and returns them
 addInputs :: Word -> NNBuilder d s (Layer s)
 addInputs d = NNBuilder (\n w i o p -> let
   n' = n + d
