@@ -17,6 +17,8 @@ module AI.HFNN.Internal (
   fixedWeights,
   standardLayer,
   stochasticLayer,
+  splitLayer,
+  layerNodes,
   addOutputs,
   initialWeights,
   initialWeights',
@@ -282,6 +284,18 @@ stochasticLayer ip af rf = NNBuilder (\n w i o p -> let
       ApplyRandomization b e rf
      ), r)
  )
+
+-- | Split a layer into two parts: the second parameter giving the size of the
+-- first part. If the layer is too small: it will be returned directly and
+-- the second part of the result will be 'Nothing'
+splitLayer :: Layer s -> Word -> (Layer s, Maybe (Layer s))
+splitLayer l@(Layer (ILayer b e)) s = if s >= e - b + 1
+  then (l,Nothing)
+  else let m = b + s in (Layer (ILayer b (m - 1)), Just $ Layer (ILayer m e))
+
+-- | Split a layer into individual nodes.
+layerNodes :: Layer s -> [Layer s]
+layerNodes (Layer (ILayer b e)) = [Layer (ILayer x x) | x <- [b .. e]]
 
 addOutputs :: Layer s -> NNBuilder d s ()
 addOutputs (Layer (ILayer b e)) = NNBuilder (\n w i o p ->
