@@ -23,6 +23,8 @@ module AI.HFNN.Internal (
   runNNBuilder,
   serializeWeights,
   deserializeWeights,
+  packWeights,
+  unpackWeights,
   feedForward,
   getOutput,
   getOutputs,
@@ -175,6 +177,14 @@ instance Show WeightValues where
           let z = showsPrec 0 v . r
           return $ if d then (", "++) . z else z
       in (('{':) .) <$> go False 0
+
+instance Read WeightValues where
+  readsPrec p s = map (\(w,r) -> (packWeights w,r)) $
+   readsPrec p $ map (\c -> case c of
+     '{' -> '['
+     '}' -> ']'
+     _ -> c
+    ) s
 
 instance Show WeightUpdate where
   showsPrec _ wv = unsafePerformIO $ withForeignPtr (weightUpdate wv) $ \p ->
@@ -346,6 +356,30 @@ deserializeWeights s = let
         weightValues = castForeignPtr bp,
         countWeightValues = fromIntegral $ len `div` 8
        }
+
+packWeights :: [Double] -> WeightValues
+packWeights l = unsafePerformIO $ do
+  let len = length l
+  wv <- mallocForeignPtrArray $ len * sizeOf (undefined :: Double)
+  withForeignPtr wv $ \p -> forM_ (zip [0 ..] l) $ \(i,v) ->
+    pokeElemOff p i v
+  return $ WeightValues {
+    weightValues = wv,
+    countWeightValues = fromIntegral len
+   }
+
+unpackWeights :: WeightValues -> [Double]
+unpackWeights wv = unsafePerformIO $ withForeignPtr (weightValues wv) $ \p ->
+ let
+  go :: Word -> IO [Double]
+  go n
+    | fromIntegral n == countWeightValues wv = [] <$
+      touchForeignPtr (weightValues wv)
+    | otherwise = do
+      v <- peekElemOff p (fromIntegral n)
+      r <- unsafeInterleaveIO $ go (n + 1)
+      return (v:r)
+  in go 0
 
 feedForward ::
   NNStructure False -> WeightValues-> [Double] -> FeedForward False
