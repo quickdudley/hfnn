@@ -21,6 +21,8 @@ module AI.HFNN.Internal (
   initialWeights,
   initialWeights',
   runNNBuilder,
+  serializeWeights,
+  deserializeWeights,
   feedForward,
   getOutput,
   getOutputs,
@@ -33,6 +35,8 @@ import Control.Monad
 import Data.Array.IO
 import Data.Semigroup
 import Data.Word
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BS
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
 import Foreign.Ptr
@@ -315,6 +319,33 @@ initialWeights' s g r = unsafePerformIO $ do
         in pokeElemOff p (fromIntegral i) v >> go (i + 1) g2
     in go 0 g
   return (WeightValues {weightValues = f, countWeightValues = s}, g')
+
+serializeWeights :: WeightValues -> BS.ByteString
+serializeWeights r = BS.fromForeignPtr
+  (castForeignPtr $ weightValues r)
+  0
+  (fromIntegral $ countWeightValues r *
+    fromIntegral (sizeOf (undefined :: Double)))
+  
+
+deserializeWeights :: BS.ByteString -> WeightValues
+deserializeWeights s = let
+  (bp, offset, len) = BS.toForeignPtr s
+  in if offset == 0
+    then WeightValues {
+      weightValues = castForeignPtr bp,
+      countWeightValues = fromIntegral $ len `div` 8
+     }
+    else unsafePerformIO $ do
+      bp' <- mallocForeignPtrArray len
+      withForeignPtr bp $ \p -> withForeignPtr bp' $ \p' ->
+        forM_ [0 .. len - 1] $ \i -> do
+          v <- peekElemOff p (i + offset)
+          pokeElemOff p' i v
+      return $ WeightValues {
+        weightValues = castForeignPtr bp,
+        countWeightValues = fromIntegral $ len `div` 8
+       }
 
 feedForward ::
   NNStructure False -> WeightValues-> [Double] -> FeedForward False
