@@ -1,6 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 module AI.HFNN.Convolutional (
-
+  convolutionalLayer
  ) where
 
 import AI.HFNN
