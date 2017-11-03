@@ -22,13 +22,16 @@ convolutionalLayer ia (fw,fh) (sw,sh) (cw,ch) (bw,bh) c af = do
   let
     iab@((ix0,iy0),(ixn,iyn)) = bounds ia
     [iw,ih] = zipWith (\z n -> n - z + 1) [ix0,iy0] [ixn,iyn]
-    ow = (iw - fw + 1) `div` sw * cw + 2 * bw
-    oh = (ih - fh + 1) `div` sh * ch + 2 * bw
+    ow = (iw - fw) `div` sw * cw + 2 * bw + 1
+    oh = (ih - fh) `div` sh * ch + 2 * bw + 1
     bwb = ((0,0,0,0),(fw - 1, fh - 1, cw - 1, ch - 1))
     cwb = ((0,0,0,0),(fw - 1, fh - 1, cw - 1, ch - 1))
     cbb = ((0,0),(cw - 1, ch - 1))
     ob = ((0,0),(ow - 1, oh - 1))
     ic = layerSize $ ia ! (ix0,iy0)
+  if fw > iw || fh > ih
+    then fail "Convolutional layer: field input exceeds overall input"
+    else return ()
   borderWeights <- (array bwb <$>) $ forM (range bwb) $ \z -> ((,) z) <$>
     addBaseWeights 1 c
   convBias <- (array cbb <$>) $ forM (range cbb) $ \z -> ((,) z) <$>
@@ -50,5 +53,5 @@ convolutionalLayer ia (fw,fh) (sw,sh) (cw,ch) (bw,bh) c af = do
     pl <- standardLayer i af
     case pl of
       Just pl' -> return ((x,y),pl')
-      _ -> error "Convolutional layer: input layer has inconsistent number \
+      _ -> fail "Convolutional layer: input layer has inconsistent number \
         \of channels"
