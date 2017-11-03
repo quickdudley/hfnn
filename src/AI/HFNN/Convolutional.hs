@@ -22,8 +22,8 @@ convolutionalLayer ia (fw,fh) (sw,sh) (cw,ch) (bw,bh) c af = do
   let
     iab@((ix0,iy0),(ixn,iyn)) = bounds ia
     [iw,ih] = zipWith (\z n -> n - z + 1) [ix0,iy0] [ixn,iyn]
-    ow = (iw - fw) `div` sw * cw + 2 * bw + 1
-    oh = (ih - fh) `div` sh * ch + 2 * bw + 1
+    ow = ((iw - fw) `div` sw + 1) * cw + 2 * bw
+    oh = ((ih - fh) `div` sh + 1) * ch + 2 * bw
     bwb = ((0,0,0,0),(fw - 1, fh - 1, cw - 1, ch - 1))
     cwb = ((0,0,0,0),(fw - 1, fh - 1, cw - 1, ch - 1))
     cbb = ((0,0),(cw - 1, ch - 1))
