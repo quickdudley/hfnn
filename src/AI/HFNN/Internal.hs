@@ -10,6 +10,8 @@ module AI.HFNN.Internal (
   InputTension,
   structureNodes,
   structureBaseWeights,
+  structureInputs,
+  structureOutputs,
   bias,
   addInputs,
   layerSize,
@@ -116,6 +118,14 @@ structureNodes = countNodes
 -- | The number of weight variables in the neural network
 structureBaseWeights :: NNStructure d -> Word
 structureBaseWeights = countBaseWeights
+
+structureInputs :: NNStructure d -> Word
+structureInputs ns = unsafePerformIO $ (\(b,e) -> e - b + 1) <$>
+  getBounds (inputNodes ns)
+
+structureOutputs :: NNStructure d -> Word
+structureOutputs ns = unsafePerformIO $ (\(b,e) -> e - b + 1) <$>
+  getBounds (outputNodes ns)
 
 -- | A set of weight values to be used with an 'NNStructure'
 data WeightValues = WeightValues {
