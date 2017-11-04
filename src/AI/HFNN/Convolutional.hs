@@ -32,8 +32,11 @@ convolutionalLayer ia (fw,fh) (sw,sh) (cw,ch) (bw,bh) c af = do
   if fw > iw || fh > ih
     then fail "Convolutional layer: field input exceeds overall input"
     else return ()
-  borderWeights <- (array bwb <$>) $ forM (range bwb) $ \z -> ((,) z) <$>
-    addBaseWeights 1 c
+  borderWeights <- if (bw,bh) /= (0,0)
+    then (array bwb <$>) $ forM (range bwb) $ \z -> ((,) z) <$>
+      addBaseWeights 1 c
+    else return (error "This shouldn't happen: tried to use weights \
+      \reserved for non-existent supplementary border")
   convBias <- (array cbb <$>) $ forM (range cbb) $ \z -> ((,) z) <$>
     addBaseWeights 1 c
   convWeights <- (array cwb <$>) $ forM (range cwb) $ \z -> ((,) z) <$>

@@ -2,8 +2,7 @@
 import Control.Applicative
 import Control.Monad
 import System.Exit
-import AI.HFNN.Internal
-import AI.HFNN.Activation
+import AI.HFNN
 import System.Random
 
 main :: IO ()
@@ -40,7 +39,7 @@ train n wv = let
 singleSample :: [Double] -> [Double] -> WeightValues -> WeightUpdate
 singleSample i o w = let
   ff = feedForward xorStructure w i
-  (wu,_) = backPropagate ff $ zipWith (flip subtract) o $ getOutputs ff
+  (wu,_) = backpropExample ff (map Just o)
   in wu
 
 samples :: [([Double],[Double])]

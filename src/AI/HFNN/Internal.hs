@@ -519,13 +519,13 @@ backPropagate r e = unsafePerformIO $ do
             pokeElemOff ne (fromIntegral i') (ie0 + wij * e')
         _ -> return ()
   itb <- getBounds $ inputNodes $ ffBaseStructure r
-  let itc = (\(a, b) -> abs (b - a)) itb
+  let itc = (\(a, b) -> max 0 (b - a + 1)) itb
   it <- mallocForeignPtrArray $ fromIntegral itc
   withForeignPtr it $ \t ->
     forM_ (range itb) $ \i -> do
       i' <- readArray (inputNodes $ ffBaseStructure r) i
       v <- peekElemOff ne $ fromIntegral i'
-      pokeElemOff t (fromIntegral i') v
+      pokeElemOff t (fromIntegral i) v
   free ne
   return (WeightUpdate {
     weightUpdateCount = countBaseWeights $ ffBaseStructure r,
