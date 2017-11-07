@@ -21,6 +21,7 @@ module AI.HFNN.Internal (
   stochasticLayer,
   splitLayer,
   layerNodes,
+  concatLayers,
   addOutputs,
   initialWeights,
   initialWeights',
@@ -89,6 +90,7 @@ data NNOperation (a :: Bool) where
   PointwiseProduct :: Word -> [Word] -> NNOperation a
   PointwiseUnary :: Word -> Word -> (Double -> (Double, Double)) ->
     NNOperation a
+  Copy :: Word -> Word -> Word -> NNOperation a
 
 -- | A monad for assembling feedforward networks. The boolean type parameter
 -- indicates whether or not the network may use stochastic units
@@ -307,6 +309,32 @@ splitLayer l@(Layer (ILayer b e)) s = if s >= e - b + 1
 layerNodes :: Layer s -> [Layer s]
 layerNodes (Layer (ILayer b e)) = [Layer (ILayer x x) | x <- [b .. e]]
 
+-- | Concatenate a list of layers into a single layer
+concatLayers :: [Layer s] -> NNBuilder d s (Layer s)
+concatLayers [] = fail "Tried to concatenate empty list of layers"
+concatLayers l0 = let
+  sc [] = undefined
+  sc l@(Layer (ILayer b _):_) = go l where
+    go [Layer (ILayer _ e)] = (Layer (ILayer b e),[])
+    go (Layer (ILayer _ m):r@(Layer (ILayer n _):_))
+      | m + 1 == n = go r
+      | otherwise = (Layer (ILayer b m),r)
+  cl z@(Layer (ILayer b _), _) = NNBuilder (\n w i o p -> (n,w,i,o,p,n)) >>=
+    go z
+   where
+    go (Layer (ILayer b1 e1), r) n = do
+      d <- NNBuilder (\n' w i o p -> let
+        s = e1 - b1 + 1
+        n2 = n' + s - 1
+        in (n2,w,i,o,p <> pure (Copy b1 n' s),n2)
+       )
+      case r of
+        [] -> return (Layer (ILayer n d))
+        _ -> go (sc r) n
+  in case sc l0 of
+    (r,[]) -> return r
+    z -> cl z
+
 addOutputs :: Layer s -> NNBuilder d s ()
 addOutputs (Layer (ILayer b e)) = NNBuilder (\n w i o p ->
   (n, w, i, o <> mconcat (map pure [b .. e]), p, ())
@@ -443,6 +471,9 @@ stochasticFeedForward :: RandomGen g =>
       forM_ (zip [b .. e] (activationFunction af t)) $ \(i, (a,g')) -> do
         pokeElemOff o (fromIntegral i) a
         pokeElemOff g (fromIntegral i) g'
+    Copy s t l -> forM_ [0 .. l - 1] $ \i -> forM_ [o,g] $ \r ->
+      peekElemOff r (fromIntegral (s + i)) >>=
+        pokeElemOff r (fromIntegral (t + i))
   ff s w i = unsafePerformIO $ do
     r <- init w s
     loadInputs r i
@@ -517,6 +548,9 @@ backPropagate r e = unsafePerformIO $ do
             wij <- getWeight ws (peekElemOff w0 . fromIntegral) i j
             ie0 <- peekElemOff ne (fromIntegral i')
             pokeElemOff ne (fromIntegral i') (ie0 + wij * e')
+        Copy s t l -> forM_ [0 .. l - 1] $ \i ->
+          peekElemOff ne (fromIntegral (t + i)) >>=
+            pokeElemOff ne (fromIntegral (s + i))
         _ -> return ()
   itb <- getBounds $ inputNodes $ ffBaseStructure r
   let itc = (\(a, b) -> max 0 (b - a + 1)) itb
