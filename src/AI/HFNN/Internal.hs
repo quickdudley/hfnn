@@ -38,6 +38,7 @@ module AI.HFNN.Internal (
   applyDelta
  ) where
 
+import Debug.Trace
 import Control.Monad
 import Data.Array.IO
 import Data.Semigroup
@@ -227,6 +228,7 @@ instance Monoid WeightUpdate where
     withForeignPtr f $ \p -> do
       forM_ [0 .. s - 1] $ \i -> pokeElemOff p (fromIntegral i) 0
       forM_ l $ \a -> withForeignPtr (weightUpdate a) $ \p' ->
+        when (weightUpdateCount a /= 0) $
         forM_ [0 .. weightUpdateCount a - 1] $ \i -> do
           rt <- peekElemOff p (fromIntegral i)
           c <- peekElemOff p' (fromIntegral i)
