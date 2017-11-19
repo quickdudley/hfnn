@@ -38,7 +38,6 @@ module AI.HFNN.Internal (
   applyDelta
  ) where
 
-import Debug.Trace
 import Control.Monad
 import Data.Array.IO
 import Data.Semigroup
