@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 module AI.HFNN.Convolutional (
-  convolutionalLayer
+  convolutionalLayer,
+  consistentFields
  ) where
 
 import AI.HFNN
@@ -58,3 +59,24 @@ convolutionalLayer ia (fw,fh) (sw,sh) (cw,ch) (bw,bh) c af = do
       Just pl' -> return ((x,y),pl')
       _ -> fail "Convolutional layer: input layer has inconsistent number \
         \of channels"
+
+consistentFields :: Word -> Word -> [Word]
+consistentFields iw s = let
+  f1 = iw `mod` s + s
+  in [f1, f1 + s .. iw] 
+
+{-
+iw - f must be a multiple of s
+f >= s
+
+iw - s
+
+field starts : 1, 1 + s, 1 + 2s, 1 + 3s
+field end = start + f - 1
+fs = 1 + (n * s)
+fe = 1 + (n * s) + f - 1
+fe = n * s + f
+n * s + f = iw must have integer solution
+n * s = iw - f
+(iw - f) `mod` s = 0
+-}
