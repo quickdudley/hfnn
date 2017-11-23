@@ -30,6 +30,7 @@ module AI.HFNN.Internal (
   deserializeWeights,
   packWeights,
   unpackWeights,
+  weightedSumUpdates,
   feedForward,
   getOutput,
   getOutputs,
@@ -433,6 +434,24 @@ unpackWeights wv = unsafePerformIO $ withForeignPtr (weightValues wv) $ \p ->
       r <- unsafeInterleaveIO $ go (n + 1)
       return (v:r)
   in go 0
+
+-- | The weighted sum of a list of weight updates (useful for implementing
+-- momentum)
+weightedSumUpdates :: [(Double,WeightUpdate)] -> WeightUpdate
+weightedSumUpdates [] = mempty
+weightedSumUpdates [(1,a)] = a
+weightedSumUpdates l = unsafePerformIO $ do
+    let s = maximum $ map (weightUpdateCount . snd) l
+    f <- mallocForeignPtrArray (fromIntegral s)
+    withForeignPtr f $ \p -> do
+      forM_ [0 .. s - 1] $ \i -> pokeElemOff p (fromIntegral i) 0
+      forM_ l $ \(m,a) -> withForeignPtr (weightUpdate a) $ \p' ->
+        when (weightUpdateCount a /= 0) $
+        forM_ [0 .. weightUpdateCount a - 1] $ \i -> do
+          rt <- peekElemOff p (fromIntegral i)
+          c <- peekElemOff p' (fromIntegral i)
+          pokeElemOff p (fromIntegral i) (rt + c * m)
+    return $ WeightUpdate { weightUpdateCount = s, weightUpdate = f }
 
 feedForward ::
   NNStructure False -> WeightValues-> [Double] -> FeedForward False
