@@ -36,7 +36,8 @@ module AI.HFNN.Internal (
   getOutputs,
   backPropagate,
   inputError,
-  applyDelta
+  applyDelta,
+  applyDeltaWith
  ) where
 
 import Control.Monad
@@ -600,7 +601,14 @@ inputError t = unsafePerformIO $ withForeignPtr (inputTension t) $ \p -> let
   in go 0
 
 applyDelta :: Double -> WeightValues -> WeightUpdate -> WeightValues
-applyDelta lr wv wu = unsafePerformIO $ do
+applyDelta lr = applyDeltaWith (\a b -> a + lr * b)
+
+-- | Apply a weight delta using a helper function. The first argument to the
+-- helper function is the current weight; the second is the corresponding weight
+-- update value
+applyDeltaWith :: (Double -> Double -> Double) -> 
+  WeightValues -> WeightUpdate -> WeightValues
+applyDeltaWith uf wv wu = unsafePerformIO $ do
   let s = max (countWeightValues wv) (weightUpdateCount wu)
   r <- mallocForeignPtrArray (fromIntegral s)
   withForeignPtr r $ \p -> withForeignPtr (weightValues wv) $ \p0 ->
@@ -611,7 +619,7 @@ applyDelta lr wv wu = unsafePerformIO $ do
       b <- if i < weightUpdateCount wu
         then peekElemOff pd (fromIntegral i)
         else return 0
-      pokeElemOff p (fromIntegral i) (a + b * lr)
+      pokeElemOff p (fromIntegral i) (uf a b)
   return $ WeightValues {
     countWeightValues = s,
     weightValues = r
