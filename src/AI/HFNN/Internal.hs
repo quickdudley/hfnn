@@ -87,7 +87,6 @@ data NNOperation (a :: Bool) where
   ApplyRandomization :: Word -> Word -> (forall g . RandomGen g =>
     g -> Double -> Double -> (Double, Double,g)
    ) -> NNOperation True
-  SoftMax :: Word -> Word -> Word -> NNOperation a
   PointwiseSum :: Word -> [Word] -> NNOperation a
   PointwiseProduct :: Word -> [Word] -> NNOperation a
   PointwiseUnary :: Word -> Word -> (Double -> (Double, Double)) ->
@@ -555,6 +554,13 @@ backPropagate r e = unsafePerformIO $ do
     forM_ [ain, ain - 1 .. ai0] $ \ai -> do
       a <- readArray (nnOperations $ ffBaseStructure r) ai
       case a of
+        ApplyActivation b e af -> case backpropFunction af of
+          Just bf -> do
+            e' <- forM [b .. e] $ peekElemOff ne . fromIntegral
+            g' <- forM [b .. e] $ peekElemOff g . fromIntegral
+            forM_ (zip [b .. e] $ bf e' g') $ \(i,e2) ->
+              pokeElemOff ne (fromIntegral i) e2
+          Nothing -> return ()
         WeightPatch s t ws -> forM_ [0 .. weightsOutputs ws - 1] $ \j -> do
           let j' = j + t
           e <- peekElemOff ne (fromIntegral j')

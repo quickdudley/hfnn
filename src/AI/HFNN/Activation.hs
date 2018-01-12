@@ -13,13 +13,20 @@ import qualified Data.ByteString as BS
 
 data ActivationFunction = ActivationFunction {
   activationFunction :: [Double] -> [(Double, Double)],
-  glActivationFunction :: Maybe BS.ByteString
+  glActivationFunction :: Maybe BS.ByteString,
+  backpropFunction :: Maybe ([Double] -> [Double] -> [Double]),
+  glBackpropFunction :: Maybe BS.ByteString
  }
 
 nogl :: ActivationFunction
 nogl = let
   errortext = "No GLSL template used directly"
-  in ActivationFunction (error errortext) Nothing
+  in ActivationFunction {
+    activationFunction = error errortext,
+    glActivationFunction = Nothing,
+    backpropFunction = Nothing,
+    glBackpropFunction = Nothing
+   }
 
 -- | Experimental activation function based on cube root. It should be less
 -- prone to the vanishing gradient problem than the logistic function and other
