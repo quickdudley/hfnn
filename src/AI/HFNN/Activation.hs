@@ -14,7 +14,7 @@ import qualified Data.ByteString as BS
 data ActivationFunction = ActivationFunction {
   activationFunction :: [Double] -> [(Double, Double)],
   glActivationFunction :: Maybe BS.ByteString,
-  backpropFunction :: Maybe ([Double] -> [Double] -> [Double]),
+  backpropFunction :: Maybe ([Double] -> [Double] -> [(Double,Double)]),
   glBackpropFunction :: Maybe BS.ByteString
  }
 
@@ -71,4 +71,18 @@ relu = nogl {
 softplus :: ActivationFunction
 softplus = nogl {
   activationFunction = map $ \x -> (log (1 + exp x), 1 / (1 + exp (-x)))
+ }
+
+softMax :: ActivationFunction
+softMax = nogl {
+  activationFunction = \z -> let
+    z_exp = map exp z
+    z_exp_sum = sum z_exp
+    in map (\x -> let y = x / z_exp_sum in (y,y)) z_exp,
+  backpropFunction = Just $ \g e -> zipWith (\i g' ->
+    (sum (zipWith3 (\j g2 e' -> let
+      k = if i == j then 1 else 0
+      in (k - g2) * e'
+     ) [0 ..] g e), g')
+   ) [0 ..] g
  }

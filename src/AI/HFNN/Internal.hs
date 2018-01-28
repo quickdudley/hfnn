@@ -558,7 +558,8 @@ backPropagate r e = unsafePerformIO $ do
           Just bf -> do
             e' <- forM [b .. e] $ peekElemOff ne . fromIntegral
             g' <- forM [b .. e] $ peekElemOff g . fromIntegral
-            forM_ (zip [b .. e] $ bf e' g') $ \(i,e2) ->
+            forM_ (zip [b .. e] $ bf e' g') $ \(i,(e2,g2)) -> do
+              pokeElemOff g (fromIntegral i) g2
               pokeElemOff ne (fromIntegral i) e2
           Nothing -> return ()
         WeightPatch s t ws -> forM_ [0 .. weightsOutputs ws - 1] $ \j -> do
