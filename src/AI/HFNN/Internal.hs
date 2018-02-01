@@ -558,24 +558,25 @@ backPropagate r e = unsafePerformIO $ do
           Just bf -> do
             e' <- forM [b .. e] $ peekElemOff ne . fromIntegral
             g' <- forM [b .. e] $ peekElemOff g . fromIntegral
-            forM_ (zip [b .. e] $ bf e' g') $ \(i,(e2,g2)) -> do
-              pokeElemOff g (fromIntegral i) g2
+            forM_ (zip [b .. e] $ bf e' g') $ \(i,e2) ->
               pokeElemOff ne (fromIntegral i) e2
-          Nothing -> return ()
+          Nothing -> forM_ [b .. e] $ \i' -> do
+            let i = fromIntegral i'
+            e' <- peekElemOff ne i
+            g' <- peekElemOff g i
+            pokeElemOff ne i (e' * g')
         WeightPatch s t ws -> forM_ [0 .. weightsOutputs ws - 1] $ \j -> do
           let j' = j + t
           e <- peekElemOff ne (fromIntegral j')
-          ad <- peekElemOff g (fromIntegral j')
-          let e' = e * ad
           forM_ [0 .. weightsInputs ws - 1] $ \i -> do
             let i' = i + s
             iv <- peekElemOff o (fromIntegral i')
             updateWeight ws (\ix v -> do
               v0 <- peekElemOff wdp (fromIntegral ix)
-              pokeElemOff wdp (fromIntegral ix) (v + v0)) i j (iv * e')
+              pokeElemOff wdp (fromIntegral ix) (v + v0)) i j (iv * e)
             wij <- getWeight ws (peekElemOff w0 . fromIntegral) i j
             ie0 <- peekElemOff ne (fromIntegral i')
-            pokeElemOff ne (fromIntegral i') (ie0 + wij * e')
+            pokeElemOff ne (fromIntegral i') (ie0 + wij * e)
         Copy s t l -> forM_ [0 .. l - 1] $ \i ->
           peekElemOff ne (fromIntegral (t + i)) >>=
             pokeElemOff ne (fromIntegral (s + i))
