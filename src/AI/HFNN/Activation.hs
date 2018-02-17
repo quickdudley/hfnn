@@ -6,6 +6,7 @@ module AI.HFNN.Activation (
   htan,
   ahsin,
   relu,
+  leakyRelu,
   softplus,
   softmax
  ) where
@@ -66,6 +67,13 @@ relu :: ActivationFunction
 relu = nogl {
   activationFunction = map $ \x -> if x < 0
     then (0, 0)
+    else (x, 1)
+ }
+
+leakyRelu :: Double -> ActivationFunction
+leakyRelu r = nogl {
+  activationFunction = map $ \x -> if x < 0
+    then (x * r, r)
     else (x, 1)
  }
 
