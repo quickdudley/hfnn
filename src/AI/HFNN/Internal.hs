@@ -17,6 +17,7 @@ module AI.HFNN.Internal (
   layerSize,
   addBaseWeights,
   fixedWeights,
+  linearLayer,
   standardLayer,
   stochasticLayer,
   pointwiseSum,
@@ -92,7 +93,7 @@ data NNOperation (a :: Bool) where
    ) -> NNOperation True
   PointwiseSum :: Word -> Word -> [(Word,Word)] -> NNOperation a
   PointwiseProduct :: Word -> Word -> [(Word,Word)] -> NNOperation a
-  PointwiseUnary :: Word -> Word -> (Double -> (Double, Double)) ->
+  PointwiseUnary :: Word -> Word -> Word -> (Double -> (Double, Double)) ->
     NNOperation a
   Copy :: Word -> Word -> Word -> NNOperation a
 
@@ -268,6 +269,24 @@ fixedWeights piw pow d = WS (IWeightSelector {
   updateWeight = const $ const $ const $ const $ return ()
  })
 
+linearLayer :: [(Layer s, WeightSelector s)] ->
+  NNBuilder d s (Maybe (Layer s))
+linearLayer [] = return Nothing
+linearLayer l@((l1,w1):r) = let
+  ls = wsOutputs w1
+  in NNBuilder (\n w i o p -> let
+    n' = n + ls
+    e = n' - 1
+    wo = mconcat <$> mapM (\(Layer (ILayer b e'), WS w0) ->
+      if e' - b + 1 == weightsInputs w0 && weightsOutputs w0 == ls
+        then Just $ pure $ WeightPatch b n w0
+        else Nothing
+     ) l
+    in case wo of
+      Nothing -> (n, w, i, o, p, Nothing)
+      Just wo' -> (n + ls, w, i, o, p <> wo', Just (Layer (ILayer n e)))
+ )
+
 standardLayer :: [(Layer s, WeightSelector s)] -> ActivationFunction ->
   NNBuilder d s (Maybe (Layer s))
 standardLayer [] _ = return Nothing
@@ -306,6 +325,16 @@ doPointwise cs ll = let
      ) ll
     in (n',w,i,o,p <> ap,Just (Layer (ILayer n e)))
    )
+
+pointwiseUnary :: Layer s -> (Double -> (Double,Double)) ->
+ NNBuilder d s (Layer s)
+pointwiseUnary il@(Layer (ILayer b e)) f = NNBuilder (\n w i o p -> let
+  l = layerSize il
+  n' = n + l
+  e' = n' - 1
+  a = pure $ PointwiseUnary b n l f
+  in (n',w,i,o,p <> a, Layer (ILayer n e'))
+ )
 
 stochasticLayer :: [(Layer s, WeightSelector s)] -> ActivationFunction ->
   (forall g . RandomGen g =>
@@ -533,6 +562,11 @@ stochasticFeedForward :: RandomGen g =>
        ) return a 1
       pokeElemOff o (fromIntegral (t + i)) v
       pokeElemOff g (fromIntegral (t + i)) v
+    PointwiseUnary s t l f -> forM_ [0 .. l - 1] $ \i -> do
+      x <- peekElemOff o (fromIntegral (s + i))
+      let (y,y') = f x
+      pokeElemOff o (fromIntegral (t + i)) y
+      pokeElemOff g (fromIntegral (t + i)) y'
   ff s w i = unsafePerformIO $ do
     r <- init w s
     loadInputs r i
@@ -636,6 +670,11 @@ backPropagate r e = unsafePerformIO $ do
              ) return [i, i + al .. l] (0,0)
             ec <- peekElemOff ne (fromIntegral (s + i))
             pokeElemOff ne (fromIntegral (s + i)) $ v * p / f + ec
+        PointwiseUnary s t l f -> forM_ [0 .. l - 1] $ \i -> do
+          v <- peekElemOff ne (fromIntegral (t + i))
+          y' <- peekElemOff g (fromIntegral (t + i))
+          x <- peekElemOff ne (fromIntegral (s + i))
+          pokeElemOff ne (fromIntegral (s + i)) (x + v * y')
         _ -> return ()
   itb <- getBounds $ inputNodes $ ffBaseStructure r
   let itc = (\(a, b) -> max 0 (b - a + 1)) itb
