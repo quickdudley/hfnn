@@ -87,8 +87,8 @@ data NNOperation (a :: Bool) where
   ApplyRandomization :: Word -> Word -> (forall g . RandomGen g =>
     g -> Double -> Double -> (Double, Double,g)
    ) -> NNOperation True
-  PointwiseSum :: Word -> [Word] -> NNOperation a
-  PointwiseProduct :: Word -> [Word] -> NNOperation a
+  PointwiseSum :: Word -> Word -> [(Word,Word)] -> NNOperation a
+  PointwiseProduct :: Word -> Word -> [(Word,Word)] -> NNOperation a
   PointwiseUnary :: Word -> Word -> (Double -> (Double, Double)) ->
     NNOperation a
   Copy :: Word -> Word -> Word -> NNOperation a
@@ -257,11 +257,11 @@ addBaseWeights piw pow = NNBuilder (\n w i o p -> let
    }))
  )
 
-fixedWeights :: Word -> Word -> Double -> WeightSelector s
+fixedWeights :: Word -> Word -> (Word -> Word -> Double) -> WeightSelector s
 fixedWeights piw pow d = WS (IWeightSelector {
   weightsInputs = piw,
   weightsOutputs = pow,
-  getWeight = const $ const $ const $ return d,
+  getWeight = const $ \ii oi -> return (d ii oi),
   updateWeight = const $ const $ const $ const $ return ()
  })
 
@@ -494,6 +494,22 @@ stochasticFeedForward :: RandomGen g =>
     Copy s t l -> forM_ [0 .. l - 1] $ \i -> forM_ [o,g] $ \r ->
       peekElemOff r (fromIntegral (s + i)) >>=
         pokeElemOff r (fromIntegral (t + i))
+    PointwiseSum t l a -> forM_ [0 .. l - 1] $ \i -> do
+      v <- foldr (\(s,al) nxt v' -> do
+        h <- peekElemOff o (fromIntegral s + fromIntegral (i `mod` al))
+        let v2 = v' + h
+        v2 `seq` nxt v2
+       ) return a 0
+      pokeElemOff g (fromIntegral (t + i)) 1
+      pokeElemOff o (fromIntegral (t + i)) v
+    PointwiseProduct t l a -> forM_ [0 .. l - 1] $ \i -> do
+      v <- foldr (\(s,al) nxt v' -> do
+        h <- peekElemOff o (fromIntegral s + fromIntegral (i `mod` al))
+        let v2 = v' * h
+        v2 `seq` nxt v2
+       ) return a 1
+      pokeElemOff o (fromIntegral (t + i)) v
+      pokeElemOff g (fromIntegral (t + i)) v
   ff s w i = unsafePerformIO $ do
     r <- init w s
     loadInputs r i
@@ -580,6 +596,21 @@ backPropagate r e = unsafePerformIO $ do
         Copy s t l -> forM_ [0 .. l - 1] $ \i ->
           peekElemOff ne (fromIntegral (t + i)) >>=
             pokeElemOff ne (fromIntegral (s + i))
+        PointwiseSum t l a -> forM_ a $ \(s,al) ->
+          forM_ [0 .. al - 1] $ \i -> do
+            v <- sum <$> forM [i, i + al .. l]
+              (peekElemOff ne . fromIntegral . (+ t))
+            pokeElemOff ne (fromIntegral (i + s)) v
+        PointwiseProduct t l a -> forM_ a $ \(s,al) -> do
+          forM_ [0 .. al - 1] $ \i -> do
+            f <- peekElemOff o (fromIntegral (s + i))
+            (v,p) <- foldr (\i2 nxt (v',p') -> do
+              v1 <- peekElemOff ne (fromIntegral i2)
+              p1 <- peekElemOff o (fromIntegral i2)
+              let v2 = v' + v1; p2 = p' + p1
+              v2 `seq` p2 `seq` nxt (v2,p2)
+             ) return [i, i + al .. l] (0,0)
+            pokeElemOff ne (fromIntegral (s + i)) $ v * p / f
         _ -> return ()
   itb <- getBounds $ inputNodes $ ffBaseStructure r
   let itc = (\(a, b) -> max 0 (b - a + 1)) itb
