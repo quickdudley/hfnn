@@ -600,7 +600,8 @@ backPropagate r e = unsafePerformIO $ do
           forM_ [0 .. al - 1] $ \i -> do
             v <- sum <$> forM [i, i + al .. l]
               (peekElemOff ne . fromIntegral . (+ t))
-            pokeElemOff ne (fromIntegral (i + s)) v
+            ec <- peekElemOff ne (fromIntegral (i + s))
+            pokeElemOff ne (fromIntegral (i + s)) (v + ec)
         PointwiseProduct t l a -> forM_ a $ \(s,al) -> do
           forM_ [0 .. al - 1] $ \i -> do
             f <- peekElemOff o (fromIntegral (s + i))
@@ -610,7 +611,8 @@ backPropagate r e = unsafePerformIO $ do
               let v2 = v' + v1; p2 = p' + p1
               v2 `seq` p2 `seq` nxt (v2,p2)
              ) return [i, i + al .. l] (0,0)
-            pokeElemOff ne (fromIntegral (s + i)) $ v * p / f
+            ec <- peekElemOff ne (fromIntegral (s + i))
+            pokeElemOff ne (fromIntegral (s + i)) $ v * p / f + ec
         _ -> return ()
   itb <- getBounds $ inputNodes $ ffBaseStructure r
   let itc = (\(a, b) -> max 0 (b - a + 1)) itb
