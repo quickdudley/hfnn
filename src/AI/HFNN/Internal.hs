@@ -19,6 +19,8 @@ module AI.HFNN.Internal (
   fixedWeights,
   standardLayer,
   stochasticLayer,
+  pointwiseSum,
+  pointwiseProduct,
   splitLayer,
   layerNodes,
   concatLayers,
@@ -42,6 +44,7 @@ module AI.HFNN.Internal (
 
 import Control.Monad
 import Data.Array.IO
+import Data.List (foldl1')
 import Data.Semigroup
 import Data.Word
 import qualified Data.ByteString as BS
@@ -283,6 +286,26 @@ standardLayer l@((l1,w1):r) af = let
       Nothing -> (n, w, i, o, p, Nothing)
       Just wo' -> (n + ls, w, i, o, p <> wo' <> aaf, Just (Layer (ILayer n e)))
  )
+
+pointwiseSum :: [Layer s] -> NNBuilder d s (Maybe (Layer s))
+pointwiseSum = doPointwise PointwiseSum
+
+pointwiseProduct :: [Layer s] -> NNBuilder d s (Maybe (Layer s))
+pointwiseProduct = doPointwise PointwiseProduct
+
+doPointwise :: (Word -> Word -> [(Word,Word)] -> NNOperation d) ->
+  [Layer s] -> NNBuilder d s (Maybe (Layer s))
+doPointwise _ [] = return Nothing
+doPointwise cs ll = let
+  ls = foldl1' lcm $ map layerSize ll
+  in NNBuilder (\n w i o p -> let
+    n' = n + ls
+    e = n' - 1
+    ap = pure $ cs n ls $ map (\l@(Layer (ILayer b _)) ->
+      (b, layerSize l)
+     ) ll
+    in (n',w,i,o,p <> ap,Just (Layer (ILayer n e)))
+   )
 
 stochasticLayer :: [(Layer s, WeightSelector s)] -> ActivationFunction ->
   (forall g . RandomGen g =>
@@ -606,8 +629,8 @@ backPropagate r e = unsafePerformIO $ do
           forM_ [0 .. al - 1] $ \i -> do
             f <- peekElemOff o (fromIntegral (s + i))
             (v,p) <- foldr (\i2 nxt (v',p') -> do
-              v1 <- peekElemOff ne (fromIntegral i2)
-              p1 <- peekElemOff o (fromIntegral i2)
+              v1 <- peekElemOff ne (fromIntegral (i2 + t))
+              p1 <- peekElemOff o (fromIntegral (i2 + t))
               let v2 = v' + v1; p2 = p' + p1
               v2 `seq` p2 `seq` nxt (v2,p2)
              ) return [i, i + al .. l] (0,0)
