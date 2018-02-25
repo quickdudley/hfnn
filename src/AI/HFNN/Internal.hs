@@ -22,6 +22,7 @@ module AI.HFNN.Internal (
   stochasticLayer,
   pointwiseSum,
   pointwiseProduct,
+  pointwiseUnary,
   splitLayer,
   layerNodes,
   concatLayers,
