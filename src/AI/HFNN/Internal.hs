@@ -1,4 +1,5 @@
-{-# LANGUAGE RankNTypes,KindSignatures,DataKinds,GADTs,FlexibleContexts #-}
+{-# LANGUAGE NoMonomorphismRestriction,
+ RankNTypes,KindSignatures,DataKinds,GADTs,FlexibleContexts #-}
 module AI.HFNN.Internal (
   WeightSelector,
   Layer,
