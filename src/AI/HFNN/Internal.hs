@@ -1,5 +1,6 @@
 {-# LANGUAGE NoMonomorphismRestriction,
- RankNTypes,KindSignatures,DataKinds,GADTs,FlexibleContexts #-}
+ RankNTypes,KindSignatures,DataKinds,GADTs,FlexibleContexts
+ #-}
 module AI.HFNN.Internal (
   WeightSelector,
   Layer,
@@ -220,6 +221,9 @@ instance Show WeightUpdate where
           let z = showsPrec 0 v . r
           return $ if d then (", "++) . z else z
       in (('{':) .) <$> go False 0
+
+instance Semigroup WeightUpdate where
+  (<>) = mappend
 
 instance Monoid WeightUpdate where
   mempty = unsafePerformIO $ do
