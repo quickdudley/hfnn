@@ -50,6 +50,7 @@ module AI.HFNN.Internal (
   applyDeltaWith
  ) where
 
+import Control.Concurrent
 import Control.Monad
 import Data.Array.IO
 import Data.List (foldl1')
@@ -554,8 +555,8 @@ stochasticFeedForward :: RandomGen g =>
       n <- readArray (inputNodes $ ffBaseStructure f) i
       pokeElemOff p (fromIntegral n) x
   step :: Ptr Double -> Ptr Double -> Ptr Double -> NNOperation d -> IO ()
-  step o g w p = case p of
-    WeightPatch s t ws -> forM_ [0 .. weightsOutputs ws - 1] $ \j -> do
+  step o g w p = getNumCapabilities >>= \caps -> case p of
+    WeightPatch s t ws -> forMCC caps [0 .. weightsOutputs ws - 1] $ \j -> do
       v <- (sum <$>) $ forM [0 .. weightsInputs ws - 1] $ \i -> do
         ia <- peekElemOff o (fromIntegral (i + s))
         sw <- getWeight ws (peekElemOff w . fromIntegral) i j
@@ -649,6 +650,7 @@ backPropagate r e = unsafePerformIO $ do
     withForeignPtr (weightValues $ ffBaseWeights r) $ \w0 ->
     withForeignPtr (ffNodeGradients r) $ \g ->
     withForeignPtr (ffNodeOutputs r) $ \o ->
+    getNumCapabilities >>= \caps ->
     forM_ [ain, ain - 1 .. ai0] $ \ai -> do
       a <- readArray (nnOperations $ ffBaseStructure r) ai
       case a of
@@ -878,3 +880,19 @@ instance Monad CatTree where
 reverseCT :: CatTree a -> CatTree a
 reverseCT r@(Run _ _) = r
 reverseCT (CatNode l a b) = CatNode l (reverseCT b) (reverseCT a)
+
+forMCC :: Int -> [a] -> (a -> IO b) -> IO ()
+forMCC c l' f = do
+  lv <- newMVar l'
+  rs <- replicateM (min c (length l')) $ do
+    r <- newEmptyMVar
+    let
+      worker = takeMVar lv >>= \l -> case l of
+        (a:s) -> do
+          putMVar lv s
+          f a
+          worker
+        [] -> putMVar lv [] >> putMVar r ()
+    forkIO worker
+    return r
+  forM_ rs takeMVar
