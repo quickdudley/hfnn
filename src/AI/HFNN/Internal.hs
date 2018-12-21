@@ -33,9 +33,13 @@ module AI.HFNN.Internal (
   initialWeights',
   runNNBuilder,
   serializeWeights,
+  serializeUpdate,
   deserializeWeights,
+  deserializeUpdate,
   packWeights,
+  packUpdate,
   unpackWeights,
+  unpackUpdate,
   weightedSumUpdates,
   feedForward,
   getOutput,
@@ -448,7 +452,9 @@ serializeWeights r = BS.fromForeignPtr
   0
   (fromIntegral $ countWeightValues r *
     fromIntegral (sizeOf (undefined :: Double)))
-  
+
+serializeUpdate :: WeightUpdate -> BS.ByteString
+serializeUpdate (WeightUpdate c p) = serializeWeights (WeightValues c p)
 
 deserializeWeights :: BS.ByteString -> WeightValues
 deserializeWeights s = let
@@ -469,6 +475,11 @@ deserializeWeights s = let
         countWeightValues = fromIntegral $ len `div` 8
        }
 
+deserializeUpdate :: BS.ByteString -> WeightUpdate
+deserializeUpdate s = let
+  WeightValues c p = deserializeWeights s
+  in WeightUpdate c p
+
 packWeights :: [Double] -> WeightValues
 packWeights l = unsafePerformIO $ do
   let len = length l
@@ -479,6 +490,11 @@ packWeights l = unsafePerformIO $ do
     weightValues = wv,
     countWeightValues = fromIntegral len
    }
+
+packUpdate :: [Double] -> WeightUpdate
+packUpdate l = let
+  WeightValues c p = packWeights l
+  in WeightUpdate c p
 
 unpackWeights :: WeightValues -> [Double]
 unpackWeights wv = unsafePerformIO $ withForeignPtr (weightValues wv) $ \p ->
@@ -492,6 +508,9 @@ unpackWeights wv = unsafePerformIO $ withForeignPtr (weightValues wv) $ \p ->
       r <- unsafeInterleaveIO $ go (n + 1)
       return (v:r)
   in go 0
+
+unpackUpdate :: WeightUpdate -> [Double]
+unpackUpdate (WeightUpdate c p) = unpackWeights (WeightValues c p)
 
 -- | The weighted sum of a list of weight updates (useful for implementing
 -- momentum)
