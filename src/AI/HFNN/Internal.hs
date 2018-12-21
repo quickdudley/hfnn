@@ -19,6 +19,7 @@ module AI.HFNN.Internal (
   layerSize,
   addBaseWeights,
   fixedWeights,
+  combineWeights,
   linearLayer,
   standardLayer,
   stochasticLayer,
@@ -278,6 +279,22 @@ fixedWeights piw pow d = WS (IWeightSelector {
   getWeight = const $ \ii oi -> return (d ii oi),
   updateWeight = const $ const $ const $ const $ return ()
  })
+
+combineWeights :: [(Double, WeightSelector s)] -> Maybe (WeightSelector s)
+combineWeights [] = Nothing
+combineWeights l@(a:r) = do
+  let
+    dim (WS s) = (weightsInputs s, weightsOutputs s)
+    da = dim $ snd a
+  forM_ r $ \(_,b) -> if dim b == da then Just () else Nothing
+  return $ WS $ IWeightSelector {
+    weightsInputs = fst da,
+    weightsOutputs = snd da,
+    getWeight = \bg x y -> fmap sum $ forM l $ \(w,WS s) ->
+      (* w) <$> getWeight s bg x y,
+    updateWeight = \bu x y d -> forM_ l $ \(w, WS s) ->
+      updateWeight s bu x y (d * w)
+   }
 
 linearLayer :: [(Layer s, WeightSelector s)] ->
   NNBuilder d s (Maybe (Layer s))
