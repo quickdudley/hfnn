@@ -16,7 +16,7 @@ simpleLayer :: [Layer s] -> Word -> ActivationFunction ->
 simpleLayer l' s af = do
   let l = bias : l'
   w <- forM l $ \l1 -> addBaseWeights (layerSize l1) s
-  Just nl <- standardLayer (zip l w) af
+  ~(Just nl) <- standardLayer (zip l w) af
   return nl
 
 backpropExample :: FeedForward d -> [Maybe Double] ->

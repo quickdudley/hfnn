@@ -61,10 +61,10 @@ xorStructure = fst $ runNNBuilder $ do
   i <- addInputs 2
   h0w <- addBaseWeights 2 4
   h0b <- addBaseWeights 1 4
-  Just h <- standardLayer [(i,h0w),(bias,h0b)] logistic
+  ~(Just h) <- standardLayer [(i,h0w),(bias,h0b)] logistic
   ow <- addBaseWeights 4 1
   ob <- addBaseWeights 1 1
-  Just o <- standardLayer [(h,ow),(bias,ob)] logistic
+  ~(Just o) <- standardLayer [(h,ow),(bias,ob)] logistic
   addOutputs o
 
 minStructure :: NNStructure False
@@ -72,7 +72,7 @@ minStructure = fst $ runNNBuilder $ do
   i <- addInputs 1
   w <- addBaseWeights 1 1
   wb <- addBaseWeights 1 1
-  Just o <- standardLayer [(i,w),(bias,wb)] logistic
+  ~(Just o) <- standardLayer [(i,w),(bias,wb)] logistic
   addOutputs o
 
 softmaxStructure :: NNStructure False
@@ -82,8 +82,8 @@ softmaxStructure = fst $ runNNBuilder $ do
   b1 <- addBaseWeights 1 9
   w2 <- addBaseWeights 9 3
   b2 <- addBaseWeights 1 3
-  Just h <- standardLayer [(i,w1),(bias,b1)] ahsin
-  Just o <- standardLayer [(h,w2),(bias,b2)] softmax
+  ~(Just h) <- standardLayer [(i,w1),(bias,b1)] ahsin
+  ~(Just o) <- standardLayer [(h,w2),(bias,b2)] softmax
   addOutputs o
 
 trainSoftmax :: Int -> WeightValues -> WeightValues
