@@ -2,11 +2,13 @@
 module AI.HFNN.Activation (
   ActivationFunction(..),
   modifiedCuberoot,
+  gaussian,
   logistic,
   htan,
   ahsin,
   relu,
   leakyRelu,
+  sine,
   softplus,
   softmax
  ) where
@@ -51,6 +53,13 @@ logistic = nogl {
     in (y, y * (1 - y))
  }
 
+gaussian :: ActivationFunction
+gaussian = nogl {
+  activationFunction = map $ \x -> let
+    y = exp(-(x^2))
+    in (y,-2 * y * x)
+ }
+
 -- | Hyperbolic tangent
 htan :: ActivationFunction
 htan = nogl {
@@ -75,6 +84,11 @@ leakyRelu r = nogl {
   activationFunction = map $ \x -> if x < 0
     then (x * r, r)
     else (x, 1)
+ }
+
+sine :: ActivationFunction
+sine = nogl {
+  activationFunction = map $ \x -> (sin x, cos x)
  }
 
 softplus :: ActivationFunction
