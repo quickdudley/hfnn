@@ -55,6 +55,7 @@ module AI.HFNN.Internal (
  ) where
 
 import Control.Monad
+import Control.Concurrent
 import Data.Array.IO
 import Data.List (foldl1')
 import Data.Semigroup
@@ -65,10 +66,21 @@ import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
 import Foreign.Ptr
 import Foreign.Storable
+import Graphics.GL
 import System.IO.Unsafe
 import System.Random
 
 import AI.HFNN.Activation
+
+inGLThread :: IO a -> IO a
+{-# NOINLINE inGLThread #-}
+inGLThread = unsafePerformIO $ do
+  amvar <- newEmptyMVar
+  forkOS $ forever $ join (takeMVar amvar)
+  return $ \a -> do
+    rv <- newEmptyMVar
+    putMVar amvar $ a >>= putMVar rv
+    takeMVar rv
 
 -- | Represents the relationship between a linear array of doubles and a
 -- particular weight matrix. Phantom type to ensure only directed acyclic
