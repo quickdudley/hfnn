@@ -15,6 +15,8 @@ module AI.HFNN.Internal (
   structureInputs,
   structureOutputs,
   bias,
+  asValues,
+  asUpdate,
   addInputs,
   layerSize,
   addBaseWeights,
@@ -47,6 +49,7 @@ module AI.HFNN.Internal (
   getOutputs,
   backPropagate,
   inputError,
+  inputError',
   applyDelta,
   applyDeltaWith
  ) where
@@ -249,6 +252,13 @@ instance Monoid WeightUpdate where
           c <- peekElemOff p' (fromIntegral i)
           pokeElemOff p (fromIntegral i) (rt + c)
     return $ WeightUpdate { weightUpdateCount = s, weightUpdate = f }
+
+-- | Reinterprets a weight update vector as a weight value vector. Useful for algorithms which involve weighted sums of weight value vectors.
+asValues :: WeightUpdate -> WeightValues
+asValues (WeightUpdate c p) = WeightValues c p
+
+asUpdate :: WeightValues -> WeightUpdate
+asUpdate (WeightValues c p) = WeightUpdate c p
 
 -- | Adds more input nodes to the neural network and returns them
 addInputs :: Word -> NNBuilder d s (Layer s)
@@ -739,6 +749,17 @@ inputError :: InputTension -> [Double]
 inputError t = unsafePerformIO $ withForeignPtr (inputTension t) $ \p -> let
   go n
     | n == tensionInputCount t = [] <$ touchForeignPtr (inputTension t)
+    | otherwise = do
+      v <- peekElemOff p (fromIntegral n)
+      r <- unsafeInterleaveIO $ go (n + 1)
+      return (v:r)
+  in go 0
+
+inputError' :: Word -> Word -> InputTension -> [Double]
+inputError' i' j' t = unsafePerformIO $ withForeignPtr (inputTension t) $ \p -> let
+  [i,j] = map (min (tensionInputCount t)) [i',j']
+  go n
+    | n == j = [] <$ touchForeignPtr (inputTension t)
     | otherwise = do
       v <- peekElemOff p (fromIntegral n)
       r <- unsafeInterleaveIO $ go (n + 1)
