@@ -1,4 +1,4 @@
-{-# LANGUAGE NoMonomorphismRestriction,
+{-# LANGUAGE CPP,NoMonomorphismRestriction,
  RankNTypes,KindSignatures,DataKinds,GADTs,FlexibleContexts
  #-}
 module AI.HFNN.Internal (
@@ -53,9 +53,12 @@ module AI.HFNN.Internal (
   applyDelta,
   applyDeltaWith
  ) where
-
+#ifdef darwin_HOST_OS
+import qualified Bindings.GLFW as GLFW
+#endif
 import Control.Monad
 import Control.Concurrent
+import Control.Exception
 import Data.Array.IO
 import Data.List (foldl1')
 import Data.Semigroup
@@ -67,6 +70,7 @@ import Foreign.Marshal.Alloc
 import Foreign.Ptr
 import Foreign.Storable
 import Graphics.GL
+import qualified Graphics.UI.GLFW as GLFW
 import System.IO.Unsafe
 import System.Random
 
@@ -76,10 +80,21 @@ inGLThread :: IO a -> IO a
 {-# NOINLINE inGLThread #-}
 inGLThread = unsafePerformIO $ do
   amvar <- newEmptyMVar
-  forkOS $ forever $ join (takeMVar amvar)
+
+  forkOn 0 $ do
+    GLFW.init >>= \s -> if s
+      then return ()
+      else error "Unable to initialize GL"
+    GLFW.windowHint $ GLFW.WindowHint'Visible False
+#ifdef darwin_HOST_OS
+    GLFW.c'glfwWindowHint 0x00051002 0
+#endif
+    hidden_window <- GLFW.createWindow 640 480 "HFNN" Nothing Nothing
+    forever $ join (takeMVar amvar)
   return $ \a -> do
     rv <- newEmptyMVar
-    putMVar amvar $ a >>= putMVar rv
+    threadId <- myThreadId
+    putMVar amvar $ catch (a >>= putMVar rv) (throwTo threadId :: SomeException -> IO ())
     takeMVar rv
 
 -- | Represents the relationship between a linear array of doubles and a
