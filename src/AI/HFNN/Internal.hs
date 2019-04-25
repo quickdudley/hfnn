@@ -27,6 +27,7 @@ module AI.HFNN.Internal (
   stochasticLayer,
   pointwiseSum,
   pointwiseProduct,
+  dotProduct,
   pointwiseUnary,
   splitLayer,
   layerNodes,
@@ -104,6 +105,7 @@ data NNOperation (a :: Bool) where
    ) -> NNOperation True
   PointwiseSum :: Word -> Word -> [(Word,Word)] -> NNOperation a
   PointwiseProduct :: Word -> Word -> [(Word,Word)] -> NNOperation a
+  DotProduct :: Word -> Word -> Word -> Word -> NNOperation a
   PointwiseUnary :: Word -> Word -> Word -> (Double -> (Double, Double)) ->
     NNOperation a
   Copy :: Word -> Word -> Word -> NNOperation a
@@ -348,6 +350,13 @@ pointwiseSum = doPointwise PointwiseSum
 
 pointwiseProduct :: [Layer s] -> NNBuilder d s (Maybe (Layer s))
 pointwiseProduct = doPointwise PointwiseProduct
+
+dotProduct :: Layer s -> Layer s -> NNBuilder d s (Maybe (Layer s))
+dotProduct a@(Layer (ILayer aa ab)) b@(Layer (ILayer ba bb))
+  | layerSize a /= layerSize b = return Nothing
+  | otherwise = NNBuilder (\n w i o p -> let
+   ap = pure $ DotProduct aa ba n (layerSize a)
+   in (n + 1,w,i,o,p <> ap, Just (Layer (ILayer n n))))
 
 doPointwise :: (Word -> Word -> [(Word,Word)] -> NNOperation d) ->
   [Layer s] -> NNBuilder d s (Maybe (Layer s))
@@ -614,6 +623,13 @@ stochasticFeedForward :: RandomGen g =>
        ) return a 1
       pokeElemOff o (fromIntegral (t + i)) v
       pokeElemOff g (fromIntegral (t + i)) v
+    DotProduct a b t l -> foldr (\i nxt s -> s `seq` do
+       a' <- peekElemOff o (fromIntegral a + fromIntegral i)
+       b' <- peekElemOff o (fromIntegral b + fromIntegral i)
+       nxt (s + a' * b')
+      ) (\s -> pokeElemOff o (fromIntegral t) s)
+      [0 .. l - 1]
+      0
     PointwiseUnary s t l f -> forM_ [0 .. l - 1] $ \i -> do
       x <- peekElemOff o (fromIntegral (s + i))
       let (y,y') = f x
@@ -722,6 +738,15 @@ backPropagate r e = unsafePerformIO $ do
              ) return [i, i + al .. l] (0,0)
             ec <- peekElemOff ne (fromIntegral (s + i))
             pokeElemOff ne (fromIntegral (s + i)) $ v * p / f + ec
+        DotProduct a b n l -> do
+          e' <- peekElemOff ne (fromIntegral n)
+          forM_ [0 .. l - 1] $ \i -> do
+            let
+              [ai,bi] = map (\base -> fromIntegral base + fromIntegral i) [a,b]
+            ~[aa,ab] <- mapM (\j -> peekElemOff o j) [ai,bi]
+            ~[cea,ceb] <- mapM (\j -> peekElemOff ne j) [ai,bi]
+            pokeElemOff ne ai (cea + ab * e')
+            pokeElemOff ne bi (ceb + aa * e')
         PointwiseUnary s t l f -> forM_ [0 .. l - 1] $ \i -> do
           v <- peekElemOff ne (fromIntegral (t + i))
           y' <- peekElemOff g (fromIntegral (t + i))
