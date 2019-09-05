@@ -17,6 +17,8 @@ module AI.HFNN.Internal (
   bias,
   asValues,
   asUpdate,
+  tensionAsUpdate,
+  asTension,
   addInputs,
   layerSize,
   addBaseWeights,
@@ -261,6 +263,12 @@ asValues (WeightUpdate c p) = WeightValues c p
 
 asUpdate :: WeightValues -> WeightUpdate
 asUpdate (WeightValues c p) = WeightUpdate c p
+
+tensionAsUpdate :: InputTension -> WeightUpdate
+tensionAsUpdate (InputTension c t) = WeightUpdate c t
+
+asTension :: WeightUpdate -> InputTension
+asTension (WeightUpdate c p) = InputTension c p
 
 -- | Adds more input nodes to the neural network and returns them
 addInputs :: Word -> NNBuilder d s (Layer s)

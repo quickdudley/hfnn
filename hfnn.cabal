@@ -18,7 +18,8 @@ library
   exposed-modules:     AI.HFNN,
                        AI.HFNN.Activation,
                        AI.HFNN.Internal,
-                       AI.HFNN.Convolutional
+                       AI.HFNN.Convolutional,
+                       AI.HFNN.Bayesian
   build-depends:       base >= 4.7 && < 5,
                        bytestring,
                        array,
