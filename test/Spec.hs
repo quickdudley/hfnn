@@ -3,6 +3,7 @@ import Control.Applicative
 import Control.Monad
 import System.Exit
 import AI.HFNN
+import AI.HFNN.Bayesian
 import System.Random
 
 main :: IO ()
@@ -11,7 +12,10 @@ main = do
   let
     (w0,g') = initialWeights xorStructure g (-0.05,0.05)
     (w2,g1) = initialWeights softmaxStructure g' (-0.05,0.05)
-  setStdGen g1
+    (twd,g2) = trainBayesian 1000000 g1 (prior (structureBaseWeights xorStructure))
+    (sd,g3) = deviation (structureBaseWeights xorStructure) g2
+    sr = sample twd sd
+  setStdGen g3
   let wn = train 1000000 w0
   putStrLn ""
   putStrLn "trained xor output"
@@ -24,6 +28,9 @@ main = do
   putStrLn "trained softmax output"
   forM_ [[if i == j then 1 else 0 | j <- [1,2,3]] | i <- [1,2,3]] $ \s ->
     print $ getOutputs $ feedForward softmaxStructure ws s
+  putStrLn "trained xor output (bayes by backprop)"
+  forM_ samples $ \(i,_) ->
+    print $ getOutputs $ feedForward xorStructure sr i
 
 simpletest :: WeightValues -> IO Bool
 simpletest w = do
@@ -41,6 +48,21 @@ train n wv = let
   wu = mconcat $ map (\(i,o) -> singleSample i o wv) samples
   wv' = applyDelta 0.3 wv wu
   in wv' `seq` train (n - 1) wv'
+
+trainBayesian :: RandomGen g => Int -> g -> WeightDistribution -> (WeightDistribution, g)
+trainBayesian 0 rng wd = (wd, rng)
+trainBayesian n rng wd = let
+  (us, rng2) = foldr (\(i,o) rst rng' -> let
+    (d,rng1) = deviation (structureBaseWeights xorStructure) rng'
+    (r,rngr) = rst rng1
+    w = sample wd d
+    swu = singleSample i o w
+    u = distributionUpdate d swu
+    in (u:r, rngr)
+   ) (\rng' -> ([],rng')) samples rng
+  u = mconcat us
+  wd' = updateDistribution 0.3 wd u
+  in wd' `seq` trainBayesian (n - 1) rng2 wd'
 
 singleSample :: [Double] -> [Double] -> WeightValues -> WeightUpdate
 singleSample i o w = let

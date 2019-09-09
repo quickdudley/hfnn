@@ -1,11 +1,19 @@
 module AI.HFNN.Bayesian (
+  WeightDistribution,
+  Deviation,
+  prior,
+  sample,
+  updateDistribution,
+  distributionUpdate,
+  deviation
  ) where
 
 import Data.List (replicate)
 import AI.HFNN.Internal
 import System.Random
 
-data WeightDistribution = WeightDistribution WeightValues WeightValues
+data WeightDistribution = WeightDistribution !WeightValues !WeightValues
+data DistributionUpdate = DistributionUpdate WeightUpdate WeightUpdate
 
 newtype Deviation = Deviation WeightValues
 
@@ -19,14 +27,28 @@ sample (WeightDistribution m sd) (Deviation d') = let
   d = applyDeltaWith (*) sd (asUpdate d')
   in applyDeltaWith (+) m (asUpdate d)
 
+distributionUpdate :: Deviation -> WeightUpdate -> DistributionUpdate
+distributionUpdate (Deviation d) u =
+  DistributionUpdate u (asUpdate $ applyDeltaWith (*) d u)
+
+instance Semigroup DistributionUpdate where
+  DistributionUpdate m1 sd1 <> DistributionUpdate m2 sd2 =
+    DistributionUpdate (m1 <> m2) (sd1 <> sd2)
+
+instance Monoid DistributionUpdate where
+  mappend = (<>)
+  mempty = DistributionUpdate mempty mempty
+  mconcat l = DistributionUpdate
+    (mconcat $ map (\(DistributionUpdate m _) -> m) l)
+    (mconcat $ map (\(DistributionUpdate _ sd) -> sd) l)
+
 updateDistribution ::
-  Double -> WeightDistribution -> Deviation -> WeightUpdate ->
+  Double -> WeightDistribution -> DistributionUpdate ->
   WeightDistribution
-updateDistribution a (WeightDistribution m sd) (Deviation d') u = let
-  dsd = asUpdate $ applyDeltaWith (*) d' u
-  in WeightDistribution
-    (applyDelta a m u)
-    (applyDelta a sd dsd)
+updateDistribution a (WeightDistribution m sd) (DistributionUpdate mu sdu) =
+  WeightDistribution
+    (applyDelta a m mu)
+    (applyDeltaWith (\v u -> abs (v + a * u)) sd sdu)
 
 deviation :: RandomGen g => Word -> g -> (Deviation, g)
 deviation n' rng0 = let
@@ -54,3 +76,9 @@ normalPair = go where
         else let
           scale = sqrt (-2 * log s / s)
           in (v1 * scale, v2 * scale, rng2)
+
+instance Show WeightDistribution where
+  showsPrec n (WeightDistribution m sd) = let
+    b = if n == 0 then id else \p -> ('(':) . p . (')':)
+    in b $ ("WeightDistribution { mean = "++) . showsPrec 9 m .
+      (", standard deviation = "++) . showsPrec 9 sd . ('}':)
