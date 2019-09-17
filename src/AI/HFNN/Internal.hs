@@ -26,6 +26,7 @@ module AI.HFNN.Internal (
   combineWeights,
   linearLayer,
   standardLayer,
+  activate,
   stochasticLayer,
   pointwiseSum,
   pointwiseProduct,
@@ -351,6 +352,17 @@ standardLayer l@((l1,w1):r) af = let
     in case wo of
       Nothing -> (n, w, i, o, p, Nothing)
       Just wo' -> (n + ls, w, i, o, p <> wo' <> aaf, Just (Layer (ILayer n e)))
+ )
+
+activate :: Layer s -> ActivationFunction -> NNBuilder d s (Layer s)
+activate (Layer (ILayer b e')) af = NNBuilder (\n w i o p -> let
+  s = e' - b + 1
+  n' = n + s - 1
+  in (n',w,i,o,
+    p <>
+    pure (Copy b n s) <>
+    pure (ApplyActivation n n' af),
+   Layer (ILayer n n'))
  )
 
 pointwiseSum :: [Layer s] -> NNBuilder d s (Maybe (Layer s))

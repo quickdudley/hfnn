@@ -1,4 +1,4 @@
-{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DataKinds, ScopedTypeVariables #-}
 import Control.Applicative
 import Control.Monad
 import System.Exit
@@ -15,7 +15,6 @@ main = do
     (twd,g2) = trainBayesian 1000000 g1 (prior (structureBaseWeights xorStructure))
     (sd,g3) = deviation (structureBaseWeights xorStructure) g2
     sr = sample twd sd
-  setStdGen g3
   let wn = train 1000000 w0
   putStrLn ""
   putStrLn "trained xor output"
@@ -31,6 +30,8 @@ main = do
   putStrLn "trained xor output (bayes by backprop)"
   forM_ samples $ \(i,_) ->
     print $ getOutputs $ feedForward xorStructure sr i
+  g4 <- testActivate g3
+  setStdGen g4
 
 simpletest :: WeightValues -> IO Bool
 simpletest w = do
@@ -119,3 +120,39 @@ trainSoftmax n wv = let
    ) c
   wv' = applyDelta 0.8 wv wu
   in wv' `seq` trainSoftmax (n - 1) wv'
+
+testActivate :: RandomGen g => g -> IO g
+testActivate rng0 = let
+  (s1,_) = runNNBuilder $ do
+    i <- addInputs 3
+    w1 <- addBaseWeights 3 3
+    ~(Just h) <- standardLayer [(i,w1)] ahsin
+    addOutputs h
+  (s2,_) = runNNBuilder $ do
+    i <- addInputs 3
+    w1 <- addBaseWeights 3 3
+    ~(Just h0) <- linearLayer [(i,w1)]
+    a <- activate h0 ahsin
+    addOutputs a
+  (wv,rng1) = initialWeights s1 rng0 (-1,1)
+  go 0 rng = rng <$ putStrLn "\'activate\' function working as expected"
+  go n rng = let
+    (i,rng') = randomNR (-1,1) 3 rng
+    [o1,o2] = map (\s -> getOutputs $
+      feedForward s wv i
+     ) [s1,s2]
+    in if o1 == o2
+      then go (n - 1) rng'
+      else (rng' <$) $
+        putStrLn $ "\'activate\' function not behaving as expected: " ++
+        show (wv, i, o1, o2)
+  in go 10 rng1
+
+randomNR :: forall g a . (RandomGen g, Random a) => (a,a) -> Int -> g -> ([a],g)
+randomNR s n0 rng0 = go n0 rng0 where
+  go :: Int -> g -> ([a],g)
+  go 0 rng = ([], rng)
+  go n rng = let
+    (a,rng1) = randomR s rng
+    (r,rng2) = go (n - 1) rng1
+    in (a:r, rng2)
