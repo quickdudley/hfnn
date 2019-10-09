@@ -1,5 +1,6 @@
 module AI.HFNN.Bayesian (
-  WeightDistribution,
+  WeightDistribution(..),
+  DistributionUpdate(..),
   Deviation,
   prior,
   sample,
