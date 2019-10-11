@@ -363,12 +363,13 @@ standardLayer l@((l1,w1):r) af = let
 activate :: Layer s -> ActivationFunction -> NNBuilder d s (Layer s)
 activate (Layer (ILayer b e')) af = NNBuilder (\n w i o p -> let
   s = e' - b + 1
-  n' = n + s - 1
+  n' = n + s
+  e = n' - 1
   in (n',w,i,o,
     p <>
     pure (Copy b n s) <>
-    pure (ApplyActivation n n' af),
-   Layer (ILayer n n'))
+    pure (ApplyActivation n e af),
+   Layer (ILayer n e))
  )
 
 pointwiseSum :: [Layer s] -> NNBuilder d s (Maybe (Layer s))
