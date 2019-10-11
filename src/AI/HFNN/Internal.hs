@@ -754,17 +754,14 @@ backPropagate r e = unsafePerformIO $ do
               (peekElemOff ne . fromIntegral . (+ t))
             ec <- peekElemOff ne (fromIntegral (i + s))
             pokeElemOff ne (fromIntegral (i + s)) (v + ec)
-        PointwiseProduct t l a -> forM_ a $ \(s,al) -> do
-          forM_ [0 .. al - 1] $ \i -> do
-            f <- peekElemOff o (fromIntegral (s + i))
-            (v,p) <- foldr (\i2 nxt (v',p') -> do
-              v1 <- peekElemOff ne (fromIntegral (i2 + t))
-              p1 <- peekElemOff o (fromIntegral (i2 + t))
-              let v2 = v' + v1; p2 = p' + p1
-              v2 `seq` p2 `seq` nxt (v2,p2)
-             ) return [i, i + al .. l] (0,0)
-            ec <- peekElemOff ne (fromIntegral (s + i))
-            pokeElemOff ne (fromIntegral (s + i)) $ v * p / f + ec
+        PointwiseProduct t l a -> forM_ [0 .. l - 1] $ \i -> do
+          p <- peekElemOff g (fromIntegral (t + i))
+          ec <- peekElemOff ne (fromIntegral (t + i))
+          forM_ a $ \(s,al) -> do
+            let i' = fromIntegral s + fromIntegral (i `mod` al)
+            v <- peekElemOff o i'
+            ec' <- peekElemOff ne i'
+            pokeElemOff ne i' $ ec' + ec * (p / v)
         DotProduct a b n l -> do
           e' <- peekElemOff ne (fromIntegral n)
           forM_ [0 .. l - 1] $ \i -> do
