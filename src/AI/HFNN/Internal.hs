@@ -759,9 +759,13 @@ backPropagate r e = unsafePerformIO $ do
           ec <- peekElemOff ne (fromIntegral (t + i))
           forM_ a $ \(s,al) -> do
             let i' = fromIntegral s + fromIntegral (i `mod` al)
-            v <- peekElemOff o i'
-            ec' <- peekElemOff ne i'
-            pokeElemOff ne i' $ ec' + ec * (p / v)
+            m <- peekElemOff o i' >>= \v -> if v == 0
+              then fmap product $ forM (filter (/=(s,al)) a) $ \(s',al') ->
+                peekElemOff o (fromIntegral s' + fromIntegral (i `mod` al'))
+              else return (p / v)
+            when ((not $ isNaN m) && m /= 0) $ do
+              ec' <- peekElemOff ne i'
+              pokeElemOff ne i' $ ec' + ec * m
         DotProduct a b n l -> do
           e' <- peekElemOff ne (fromIntegral n)
           forM_ [0 .. l - 1] $ \i -> do
