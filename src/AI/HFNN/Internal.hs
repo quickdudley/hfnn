@@ -741,7 +741,10 @@ backPropagate r e = unsafePerformIO $ do
             iv <- peekElemOff o (fromIntegral i')
             updateWeight ws (\ix v -> do
               v0 <- peekElemOff wdp (fromIntegral ix)
-              pokeElemOff wdp (fromIntegral ix) (v + v0)) i j (iv * e)
+              let v1 = v + v0
+              if isNaN v1
+                then return ()
+                else pokeElemOff wdp (fromIntegral ix) v1) i j (iv * e)
             wij <- getWeight ws (peekElemOff w0 . fromIntegral) i j
             ie0 <- peekElemOff ne (fromIntegral i')
             pokeElemOff ne (fromIntegral i') (ie0 + wij * e)
