@@ -29,6 +29,7 @@ module AI.HFNN.Internal (
   linearLayer,
   standardLayer,
   activate,
+  clipGradient,
   stochasticLayer,
   pointwiseSum,
   pointwiseProduct,
@@ -114,6 +115,7 @@ data NNOperation (a :: Bool) where
   PointwiseUnary :: Word -> Word -> Word -> (Double -> (Double, Double)) ->
     NNOperation a
   Copy :: Word -> Word -> Word -> NNOperation a
+  ClipGradient :: Word -> Word -> Word -> Double -> NNOperation a
 
 -- | A monad for assembling feedforward networks. The boolean type parameter
 -- indicates whether or not the network may use stochastic units
@@ -371,6 +373,18 @@ activate (Layer (ILayer b e')) af = NNBuilder (\n w i o p -> let
     pure (ApplyActivation n e af),
    Layer (ILayer n e))
  )
+
+clipGradient :: Layer s -> Double -> NNBuilder d s (Layer s)
+clipGradient (Layer (ILayer b e')) t = NNBuilder (\n w i o p -> let
+  s = e' - b + 1
+  n' = n + s
+  e = n' - 1
+  in (n',w,i,o,
+    p <>
+    pure (ClipGradient b n s (abs t)),
+   Layer (ILayer n e))
+ )
+
 
 pointwiseSum :: [Layer s] -> NNBuilder d s (Maybe (Layer s))
 pointwiseSum = doPointwise PointwiseSum
@@ -634,6 +648,7 @@ stochasticFeedForward :: RandomGen g =>
     Copy s t l -> forM_ [0 .. l - 1] $ \i -> forM_ [o,g] $ \r ->
       peekElemOff r (fromIntegral (s + i)) >>=
         pokeElemOff r (fromIntegral (t + i))
+    ClipGradient s t l _ -> step o g w (Copy s t l)
     PointwiseSum t l a -> forM_ [0 .. l - 1] $ \i -> do
       v <- foldr (\(s,al) nxt v' -> do
         h <- peekElemOff o (fromIntegral s + fromIntegral (i `mod` al))
@@ -751,6 +766,9 @@ backPropagate r e = unsafePerformIO $ do
         Copy s t l -> forM_ [0 .. l - 1] $ \i ->
           peekElemOff ne (fromIntegral (t + i)) >>=
             pokeElemOff ne (fromIntegral (s + i))
+        ClipGradient s t l w -> forM_ [0 .. l - 1] $ \i ->
+          peekElemOff ne (fromIntegral (t + i)) >>=
+            pokeElemOff ne (fromIntegral (s + i)) . max (-w) . min w
         PointwiseSum t l a -> forM_ a $ \(s,al) ->
           forM_ [0 .. al - 1] $ \i -> do
             v <- sum <$> forM [i, i + al .. l]
